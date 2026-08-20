@@ -25,4 +25,11 @@ kotlin {
             }
         }
     }
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation("io.ktor:ktor-network:3.0.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+        }
+    }
 }
