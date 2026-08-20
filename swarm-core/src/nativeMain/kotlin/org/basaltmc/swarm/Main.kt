@@ -12,6 +12,7 @@ fun main(args: Array<String>) = runBlocking {
     var count = 1
     var delayMs = 200L
     var physicsEnabled = false
+    var spread = 0.0
 
     var i = 0
     while (i < args.size) {
@@ -42,15 +43,21 @@ fun main(args: Array<String>) = runBlocking {
                 physicsEnabled = false
                 i++
             }
+            "--spread" -> {
+                spread = args.getOrNull(i + 1)?.toDoubleOrNull() ?: spread
+                i += 2
+            }
             else -> i++
         }
     }
 
-    println("Target: $host:$port | Bots: $count | Delay: ${delayMs}ms | Physics: $physicsEnabled")
+    val layout = if (spread > 0.0) "${spread.toInt()} blocks apart" else "on the spawn"
+    println("Target: $host:$port | Bots: $count | Delay: ${delayMs}ms | Physics: $physicsEnabled | Layout: $layout")
 
+    val targets = spawnGrid(count, spread)
     for (id in 1..count) {
         launch {
-            val bot = Bot(id, host, port, physicsEnabled)
+            val bot = Bot(id, host, port, physicsEnabled, targets.getOrNull(id - 1))
             bot.connect()
         }
         delay(delayMs)

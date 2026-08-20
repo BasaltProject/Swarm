@@ -23,7 +23,13 @@ enum class ProtocolState {
     PLAY
 }
 
-class Bot(private val id: Int, private val host: String, private val port: Int, private val physicsEnabled: Boolean = false) {
+class Bot(
+    private val id: Int,
+    private val host: String,
+    private val port: Int,
+    private val physicsEnabled: Boolean = false,
+    private val target: SpawnTarget? = null,
+) {
     private var state = ProtocolState.LOGIN
     private var compressionThreshold = -1
     private lateinit var sendChannel: ByteWriteChannel
@@ -101,7 +107,11 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
         println("Bot $id sent Login Start")
     }
 
-    private suspend fun handlePacket(packetId: Int, packetData: Source, scope: kotlinx.coroutines.CoroutineScope): Boolean {
+    private suspend fun handlePacket(
+        packetId: Int,
+        packetData: Source,
+        scope: kotlinx.coroutines.CoroutineScope,
+    ): Boolean {
         return when (state) {
             ProtocolState.LOGIN -> handleLoginPacket(packetId, packetData)
             ProtocolState.CONFIGURATION -> handleConfigurationPacket(packetId, packetData, scope)
@@ -135,7 +145,11 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
         return true
     }
 
-    private suspend fun handleConfigurationPacket(packetId: Int, packetData: Source, scope: kotlinx.coroutines.CoroutineScope): Boolean {
+    private suspend fun handleConfigurationPacket(
+        packetId: Int,
+        packetData: Source,
+        scope: kotlinx.coroutines.CoroutineScope,
+    ): Boolean {
         when (packetId) {
             0x00 -> { // Clientbound Plugin Message
                 packetData.readByteArray()
@@ -233,15 +247,7 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
                         onGround = false
                     }
 
-                    // Send ServerboundPositionLookPacket (0x1f)
-                    sendChannel.writePacket(0x1f, compressionThreshold) {
-                        writeDouble(x)
-                        writeDouble(y)
-                        writeDouble(z)
-                        writeFloat(yaw)
-                        writeFloat(pitch)
-                        writeByte(if (onGround) 1 else 0)
-                    }
+                    sendPositionLook()
                 }
                 delay(50) // 20 TPS
             }
@@ -274,12 +280,31 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
                 sendChannel.writePacket(0x00, compressionThreshold) { // Accept Teleportation
                     writeVarInt(teleportId)
                 }
+
+                // Every sync puts the bot back on the spawn, so the target is claimed again after
+                // each one or the swarm quietly collapses into a single spot.
+                if (target != null) {
+                    x = target.x
+                    z = target.z
+                    sendPositionLook()
+                }
             }
             else -> {
                 packetData.readByteArray()
             }
         }
         return true
+    }
+
+    private suspend fun sendPositionLook() {
+        sendChannel.writePacket(0x1f, compressionThreshold) { // ServerboundPositionLookPacket
+            writeDouble(x)
+            writeDouble(y)
+            writeDouble(z)
+            writeFloat(yaw)
+            writeFloat(pitch)
+            writeByte(if (onGround) 1 else 0)
+        }
     }
 
     private suspend fun sendClientInformation() {

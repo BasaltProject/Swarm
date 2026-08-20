@@ -56,6 +56,7 @@ You can run the generated native binary directly from your terminal. Swarm provi
 - `--delay`, `-d <ms>` (default: `200`): Delay in milliseconds between each bot connection.
 - `--physics` (default: disabled): Enables the physics engine. Bots will simulate realistic Minecraft gravity, occasionally jump, and wander randomly around the X/Z plane while continuously sending position and rotation packets to the server.
 - `--no-physics`: Disables the physics engine. Bots will remain static.
+- `--spread <blocks>` (default: disabled): Spreads the bots over a square grid centred on the spawn, that many blocks between neighbours. Without it every bot stands on the spawn, which only ever loads one area of the world. Each bot claims its cell again after every position sync the server sends.
 
 ### Examples
 
@@ -72,6 +73,11 @@ You can run the generated native binary directly from your terminal. Swarm provi
 **Connect 1000 bots with a very fast 10ms join delay:**
 ```bash
 ./basalt-swarm.kexe --ip 127.0.0.1 -c 1000 -d 10 --physics
+```
+
+**Spread 16 bots 2048 blocks apart:**
+```bash
+./basalt-swarm.kexe --count 16 --spread 2048 --physics
 ```
 
 ## License
