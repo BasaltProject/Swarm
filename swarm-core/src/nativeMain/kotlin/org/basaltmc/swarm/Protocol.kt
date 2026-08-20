@@ -4,10 +4,9 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.readByte
 import io.ktor.utils.io.writeFully
-import io.ktor.utils.io.core.buildPacket
-import io.ktor.utils.io.core.writeFully
+import kotlinx.io.Buffer
+import kotlinx.io.Source
 import kotlinx.io.readByteArray
-import io.ktor.utils.io.core.BytePacketBuilder
 
 suspend fun ByteReadChannel.readVarInt(): Int {
     var numRead = 0
@@ -25,7 +24,7 @@ suspend fun ByteReadChannel.readVarInt(): Int {
     return result
 }
 
-fun kotlinx.io.Source.readVarInt(): Int {
+fun Source.readVarInt(): Int {
     var numRead = 0
     var result = 0
     var read: Byte
@@ -41,7 +40,7 @@ fun kotlinx.io.Source.readVarInt(): Int {
     return result
 }
 
-fun BytePacketBuilder.writeVarInt(value: Int) {
+fun Buffer.writeVarInt(value: Int) {
     var v = value
     do {
         var temp = (v and 0b01111111).toByte()
@@ -53,38 +52,38 @@ fun BytePacketBuilder.writeVarInt(value: Int) {
     } while (v != 0)
 }
 
-fun BytePacketBuilder.writeString(value: String) {
+fun Buffer.writeString(value: String) {
     val bytes = value.encodeToByteArray()
     writeVarInt(bytes.size)
-    writeFully(bytes)
+    write(bytes)
 }
 
-suspend fun ByteWriteChannel.writePacket(packetId: Int, compressionThreshold: Int, builderAction: BytePacketBuilder.() -> Unit) {
-    val payloadPacket = buildPacket {
+suspend fun ByteWriteChannel.writePacket(packetId: Int, compressionThreshold: Int, builderAction: Buffer.() -> Unit) {
+    val payloadBuffer = Buffer().apply {
         writeVarInt(packetId)
         builderAction()
     }
-    val payloadBytes = payloadPacket.readByteArray()
+    val payloadBytes = payloadBuffer.readByteArray()
     
     val finalData: ByteArray
     if (compressionThreshold >= 0) {
         if (payloadBytes.size >= compressionThreshold) {
             val compressed = Zlib.compress(payloadBytes)
-            val dataLengthPacket = buildPacket { writeVarInt(payloadBytes.size) }
-            finalData = dataLengthPacket.readByteArray() + compressed
+            val dataLengthBuffer = Buffer().apply { writeVarInt(payloadBytes.size) }
+            finalData = dataLengthBuffer.readByteArray() + compressed
         } else {
-            val dataLengthPacket = buildPacket { writeVarInt(0) }
-            finalData = dataLengthPacket.readByteArray() + payloadBytes
+            val dataLengthBuffer = Buffer().apply { writeVarInt(0) }
+            finalData = dataLengthBuffer.readByteArray() + payloadBytes
         }
     } else {
         finalData = payloadBytes
     }
     
-    val lengthPacket = buildPacket {
+    val lengthBuffer = Buffer().apply {
         writeVarInt(finalData.size)
     }
     
-    writeFully(lengthPacket.readByteArray())
+    writeFully(lengthBuffer.readByteArray())
     writeFully(finalData)
     flush()
 }

@@ -11,6 +11,7 @@ fun main(args: Array<String>) = runBlocking {
     var port = 25565
     var count = 1
     var delayMs = 200L
+    var physicsEnabled = false
 
     var i = 0
     while (i < args.size) {
@@ -33,15 +34,23 @@ fun main(args: Array<String>) = runBlocking {
                 delayMs = args.getOrNull(i + 1)?.toLongOrNull() ?: delayMs
                 i += 2
             }
+            "--physics" -> {
+                physicsEnabled = true
+                i++
+            }
+            "--no-physics" -> {
+                physicsEnabled = false
+                i++
+            }
             else -> i++
         }
     }
 
-    println("Target: $host:$port | Bots: $count | Delay: ${delayMs}ms")
+    println("Target: $host:$port | Bots: $count | Delay: ${delayMs}ms | Physics: $physicsEnabled")
 
     for (id in 1..count) {
         launch {
-            val bot = Bot(id, host, port)
+            val bot = Bot(id, host, port, physicsEnabled)
             bot.connect()
         }
         delay(delayMs)

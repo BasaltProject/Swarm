@@ -6,50 +6,42 @@ import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
-import io.ktor.utils.io.core.writeFully
-import kotlinx.io.readByteArray
 import io.ktor.utils.io.readPacket
+import kotlinx.io.Buffer
+import kotlinx.io.Source
+import kotlinx.io.readByteArray
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlin.random.Random
 
-class Bot(private val id: Int, private val host: String, private val port: Int) {
-    suspend fun connect() {
+enum class ProtocolState {
+    LOGIN,
+    CONFIGURATION,
+    PLAY
+}
+
+class Bot(private val id: Int, private val host: String, private val port: Int, private val physicsEnabled: Boolean = false) {
+    private var state = ProtocolState.LOGIN
+    private var compressionThreshold = -1
+    private lateinit var sendChannel: ByteWriteChannel
+
+    suspend fun connect() = kotlinx.coroutines.coroutineScope {
         val selectorManager = SelectorManager(Dispatchers.Default)
         try {
             val socket = aSocket(selectorManager).tcp().connect(host, port)
             val receiveChannel = socket.openReadChannel()
-            val sendChannel = socket.openWriteChannel(autoFlush = true)
+            sendChannel = socket.openWriteChannel(autoFlush = true)
 
             println("Bot $id connected to $host:$port")
 
-            // Handshake (Packet ID 0x00)
-            sendChannel.writePacket(0x00, -1) {
-                writeVarInt(776) // Protocol version for 26.2
-                writeString(host)
-                writeShort(port.toShort())
-                writeVarInt(2) // Next state: Login
-            }
+            sendHandshakeAndLogin()
 
-            // Login Start (Packet ID 0x00 in Login state)
-            sendChannel.writePacket(0x00, -1) {
-                writeString("Bot_$id")
-                val uuidBytes = kotlin.random.Random.nextBytes(16)
-                uuidBytes[6] = (uuidBytes[6].toInt() and 0x0f or 0x40).toByte()
-                uuidBytes[8] = (uuidBytes[8].toInt() and 0x3f or 0x80).toByte()
-                writeFully(uuidBytes)
-            }
-
-            println("Bot $id sent Login Start")
-            
-            var state = 1 // 1=LOGIN, 2=CONFIGURATION, 3=PLAY
-            var compressionThreshold = -1
-
-            // Keep alive and state machine loop
             while (true) {
                 val length = receiveChannel.readVarInt()
                 val rawPacketData = receiveChannel.readPacket(length)
                 
-                val packetData: kotlinx.io.Source
+                val packetData: Source
                 if (compressionThreshold >= 0) {
                     val dataLength = rawPacketData.readVarInt()
                     if (dataLength == 0) {
@@ -57,78 +49,158 @@ class Bot(private val id: Int, private val host: String, private val port: Int) 
                     } else {
                         val compressedData = rawPacketData.readByteArray()
                         val decompressed = Zlib.decompress(compressedData, dataLength)
-                        packetData = kotlinx.io.Buffer().apply { write(decompressed) }
+                        packetData = Buffer().apply { write(decompressed) }
                     }
                 } else {
                     packetData = rawPacketData
                 }
 
                 val packetId = packetData.readVarInt()
-
-                when (state) {
-                    1 -> { // LOGIN
-                        if (packetId == 0x03) { // Login Compression
-                            compressionThreshold = packetData.readVarInt()
-                            println("Bot $id enabled compression. Threshold: $compressionThreshold")
-                        } else if (packetId == 0x02) { // Login Success
-                            packetData.readByteArray()
-                            println("Bot $id received Login Success. Sending Acknowledged.")
-                            sendChannel.writePacket(0x03, compressionThreshold) {}
-                            state = 2
-                            
-                            sendChannel.writePacket(0x00, compressionThreshold) {
-                                writeString("en_us")
-                                writeByte(2)
-                                writeVarInt(0)
-                                writeByte(1)
-                                writeByte(0x7F)
-                                writeVarInt(1)
-                                writeByte(0)
-                                writeByte(1)
-                                writeVarInt(1) // particleStatus
-                            }
-                        } else if (packetId == 0x00) { // Disconnect
-                            val reason = packetData.readByteArray().decodeToString()
-                            println("Bot $id disconnected in Login. Reason: $reason")
-                            return
-                        } else {
-                            println("Bot $id received unknown packet in Login: $packetId")
-                            packetData.readByteArray()
-                        }
-                    }
-                    2 -> { // CONFIGURATION
-                        if (packetId == 0x03) { // Finish Configuration
-                            packetData.readByteArray()
-                            sendChannel.writePacket(0x03, compressionThreshold) {}
-                            state = 3
-                            println("Bot $id joined the game (Play State)")
-                        } else if (packetId == 0x02) { // Keep Alive in Config
-                            val keepAliveId = packetData.readByteArray()
-                            sendChannel.writePacket(0x02, compressionThreshold) {
-                                writeFully(keepAliveId)
-                            }
-                        } else if (packetId == 0x00) { // Clientbound Plugin Message
-                            packetData.readByteArray()
-                        } else if (packetId == 0x0e) { // Select Known Packs
-                            packetData.readByteArray()
-                            // Respond with 0 known packs
-                            sendChannel.writePacket(0x07, compressionThreshold) {
-                                writeVarInt(0)
-                            }
-                        } else {
-                            val unknownData = packetData.readByteArray()
-                            println("Bot $id received unknown packet in config: $packetId")
-                        }
-                    }
-                    3 -> { // PLAY
-                        // Keep alive ID in Play state
-                        packetData.readByteArray()
-                    }
+                val continueLoop = handlePacket(packetId, packetData, this)
+                if (!continueLoop) {
+                    break
                 }
             }
             
         } catch (e: Exception) {
-            println("Bot $id failed to connect: ${e.message}")
+            println("Bot $id disconnected or failed to connect: ${e.message}")
+        }
+    }
+
+    private suspend fun sendHandshakeAndLogin() {
+        sendChannel.writePacket(0x00, -1) {
+            writeVarInt(776) // Protocol version for 26.2
+            writeString(host)
+            writeShort(port.toShort())
+            writeVarInt(2) // Next state: Login
+        }
+
+        sendChannel.writePacket(0x00, -1) {
+            writeString("Bot_$id")
+            val uuidBytes = Random.nextBytes(16)
+            uuidBytes[6] = (uuidBytes[6].toInt() and 0x0f or 0x40).toByte()
+            uuidBytes[8] = (uuidBytes[8].toInt() and 0x3f or 0x80).toByte()
+            write(uuidBytes)
+        }
+        println("Bot $id sent Login Start")
+    }
+
+    private suspend fun handlePacket(packetId: Int, packetData: Source, scope: kotlinx.coroutines.CoroutineScope): Boolean {
+        return when (state) {
+            ProtocolState.LOGIN -> handleLoginPacket(packetId, packetData)
+            ProtocolState.CONFIGURATION -> handleConfigurationPacket(packetId, packetData, scope)
+            ProtocolState.PLAY -> handlePlayPacket(packetId, packetData)
+        }
+    }
+
+    private suspend fun handleLoginPacket(packetId: Int, packetData: Source): Boolean {
+        when (packetId) {
+            0x00 -> { // Disconnect
+                val reason = packetData.readByteArray().decodeToString()
+                println("Bot $id disconnected in Login. Reason: $reason")
+                return false
+            }
+            0x02 -> { // Login Success
+                packetData.readByteArray() // discard payload
+                println("Bot $id received Login Success. Sending Acknowledged.")
+                sendChannel.writePacket(0x03, compressionThreshold) {}
+                state = ProtocolState.CONFIGURATION
+                sendClientInformation()
+            }
+            0x03 -> { // Login Compression
+                compressionThreshold = packetData.readVarInt()
+                println("Bot $id enabled compression. Threshold: $compressionThreshold")
+            }
+            else -> {
+                println("Bot $id received unknown packet in Login: 0x${packetId.toString(16)}")
+                packetData.readByteArray() // ignore
+            }
+        }
+        return true
+    }
+
+    private suspend fun handleConfigurationPacket(packetId: Int, packetData: Source, scope: kotlinx.coroutines.CoroutineScope): Boolean {
+        when (packetId) {
+            0x00 -> { // Clientbound Plugin Message
+                packetData.readByteArray()
+            }
+            0x01 -> { // Brand
+                packetData.readByteArray()
+            }
+            0x02 -> { // Keep Alive
+                val keepAliveId = packetData.readByteArray()
+                sendChannel.writePacket(0x02, compressionThreshold) {
+                    write(keepAliveId)
+                }
+            }
+            0x03 -> { // Finish Configuration
+                packetData.readByteArray()
+                sendChannel.writePacket(0x03, compressionThreshold) {}
+                state = ProtocolState.PLAY
+                println("Bot $id joined the game (Play State)")
+                if (physicsEnabled) {
+                    scope.launchPhysicsLoop()
+                }
+            }
+            0x0e -> { // Select Known Packs
+                packetData.readByteArray()
+                sendChannel.writePacket(0x07, compressionThreshold) {
+                    writeVarInt(0)
+                }
+            }
+            else -> {
+                packetData.readByteArray()
+            }
+        }
+        return true
+    }
+
+    private fun kotlinx.coroutines.CoroutineScope.launchPhysicsLoop() {
+        launch {
+            println("Bot $id starting physics loop")
+            while (state == ProtocolState.PLAY) {
+                // TODO: Simulate gravity and movement, send Player Position packet
+                delay(50) // 20 TPS
+            }
+        }
+    }
+
+    private suspend fun handlePlayPacket(packetId: Int, packetData: Source): Boolean {
+        when (packetId) {
+            0x2c -> { // Keep Alive
+                val keepAliveId = packetData.readByteArray()
+                sendChannel.writePacket(0x1c, compressionThreshold) {
+                    write(keepAliveId)
+                }
+            }
+            0x48 -> { // Player Position (Clientbound)
+                val teleportId = packetData.readVarInt()
+                // The rest of the payload is doubles/floats for position, we can ignore them for now
+                // just acknowledge the teleport so the server thinks we're fully loaded
+                packetData.readByteArray()
+                
+                sendChannel.writePacket(0x00, compressionThreshold) { // Accept Teleportation
+                    writeVarInt(teleportId)
+                }
+            }
+            else -> {
+                packetData.readByteArray()
+            }
+        }
+        return true
+    }
+
+    private suspend fun sendClientInformation() {
+        sendChannel.writePacket(0x00, compressionThreshold) {
+            writeString("en_us")
+            writeByte(2) // view distance
+            writeVarInt(0) // chat mode
+            writeByte(1) // chat colors
+            writeByte(0x7F) // skin parts
+            writeVarInt(1) // main hand
+            writeByte(0) // text filtering
+            writeByte(1) // server listings
+            writeVarInt(1) // particle status
         }
     }
 }
