@@ -27,13 +27,52 @@ Like the rest of the Basalt Project, it is written entirely in **Kotlin/Native**
 
 ## Building
 
-Instructions for building Basalt Swarm will be added as the project evolves.
+Since Basalt Swarm is built with Kotlin Multiplatform (targeting Native), you can build the executable for your current operating system using Gradle:
 
 ```bash
 git clone https://github.com/BasaltProject/Swarm.git
+cd Swarm
+./gradlew assemble
 ```
 
-*(Additional build and execution instructions will be added as the project evolves.)*
+The resulting binaries will be placed in `swarm-core/build/bin/`. Depending on your OS and the build type, you can find the executable at:
+- macOS (Apple Silicon): `swarm-core/build/bin/macosArm64/basalt-swarmReleaseExecutable/basalt-swarm.kexe`
+- Linux (x64): `swarm-core/build/bin/linuxX64/basalt-swarmReleaseExecutable/basalt-swarm.kexe`
+- Windows (x64): `swarm-core/build/bin/mingwX64/basalt-swarmReleaseExecutable/basalt-swarm.exe`
+
+*Note: You can also find `basalt-swarmDebugExecutable` for debug builds.*
+
+## Usage
+
+You can run the generated native binary directly from your terminal. Swarm provides several CLI arguments to customize the stress test behavior:
+
+```bash
+./basalt-swarm.kexe [options]
+```
+
+### Available Arguments:
+- `--ip <host:port>` or `<host>` (default: `127.0.0.1:25565`): Target server address and port.
+- `--count`, `-c <number>` (default: `1`): Number of bots to spawn.
+- `--delay`, `-d <ms>` (default: `200`): Delay in milliseconds between each bot connection.
+- `--physics` (default: disabled): Enables the physics engine. Bots will simulate realistic Minecraft gravity, occasionally jump, and wander randomly around the X/Z plane while continuously sending position and rotation packets to the server.
+- `--no-physics`: Disables the physics engine. Bots will remain static.
+
+### Examples
+
+**Connect 500 bots locally:**
+```bash
+./basalt-swarm.kexe --count 500
+```
+
+**Connect 100 bots to a specific server with physics enabled:**
+```bash
+./basalt-swarm.kexe --ip 192.168.1.50:25565 --count 100 --physics
+```
+
+**Connect 1000 bots with a very fast 10ms join delay:**
+```bash
+./basalt-swarm.kexe --ip 127.0.0.1 -c 1000 -d 10 --physics
+```
 
 ## License
 
