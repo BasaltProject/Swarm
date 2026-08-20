@@ -23,7 +23,7 @@ class Bot(private val id: Int, private val host: String, private val port: Int) 
             println("Bot $id connected to $host:$port")
 
             // Handshake (Packet ID 0x00)
-            sendChannel.writePacket(0x00) {
+            sendChannel.writePacket(0x00, -1) {
                 writeVarInt(776) // Protocol version for 26.2
                 writeString(host)
                 writeShort(port.toShort())
@@ -31,11 +31,9 @@ class Bot(private val id: Int, private val host: String, private val port: Int) 
             }
 
             // Login Start (Packet ID 0x00 in Login state)
-            sendChannel.writePacket(0x00) {
+            sendChannel.writePacket(0x00, -1) {
                 writeString("Bot_$id")
-                // UUID (16 bytes)
                 val uuidBytes = kotlin.random.Random.nextBytes(16)
-                // Set UUID version to 4 (random) and variant to 2 (Leach-Salz)
                 uuidBytes[6] = (uuidBytes[6].toInt() and 0x0f or 0x40).toByte()
                 uuidBytes[8] = (uuidBytes[8].toInt() and 0x3f or 0x80).toByte()
                 writeFully(uuidBytes)
@@ -43,25 +41,90 @@ class Bot(private val id: Int, private val host: String, private val port: Int) 
 
             println("Bot $id sent Login Start")
             
-            // Keep alive loop
+            var state = 1 // 1=LOGIN, 2=CONFIGURATION, 3=PLAY
+            var compressionThreshold = -1
+
+            // Keep alive and state machine loop
             while (true) {
                 val length = receiveChannel.readVarInt()
-                val packetData = receiveChannel.readPacket(length)
-                // Parse packet ID (VarInt) manually from the packet
-                var numRead = 0
-                var packetId = 0
-                var read: Byte
-                do {
-                    read = packetData.readByte()
-                    val value = (read.toInt() and 0b01111111)
-                    packetId = packetId or (value shl (7 * numRead))
-                    numRead++
-                } while ((read.toInt() and 0b10000000) != 0)
+                val rawPacketData = receiveChannel.readPacket(length)
+                
+                val packetData: kotlinx.io.Source
+                if (compressionThreshold >= 0) {
+                    val dataLength = rawPacketData.readVarInt()
+                    if (dataLength == 0) {
+                        packetData = rawPacketData
+                    } else {
+                        val compressedData = rawPacketData.readByteArray()
+                        val decompressed = Zlib.decompress(compressedData, dataLength)
+                        packetData = kotlinx.io.Buffer().apply { write(decompressed) }
+                    }
+                } else {
+                    packetData = rawPacketData
+                }
 
-                // If it's a Keep Alive packet (Clientbound Play 0x24 in 1.20, might differ in 26.2, we need to respond)
-                // For a stress tester, we might need to properly parse Login Success -> Play state transition
-                // For now just discard unhandled packets
-                packetData.readByteArray()
+                val packetId = packetData.readVarInt()
+
+                when (state) {
+                    1 -> { // LOGIN
+                        if (packetId == 0x03) { // Login Compression
+                            compressionThreshold = packetData.readVarInt()
+                            println("Bot $id enabled compression. Threshold: $compressionThreshold")
+                        } else if (packetId == 0x02) { // Login Success
+                            packetData.readByteArray()
+                            println("Bot $id received Login Success. Sending Acknowledged.")
+                            sendChannel.writePacket(0x03, compressionThreshold) {}
+                            state = 2
+                            
+                            sendChannel.writePacket(0x00, compressionThreshold) {
+                                writeString("en_us")
+                                writeByte(2)
+                                writeVarInt(0)
+                                writeByte(1)
+                                writeByte(0x7F)
+                                writeVarInt(1)
+                                writeByte(0)
+                                writeByte(1)
+                                writeVarInt(1) // particleStatus
+                            }
+                        } else if (packetId == 0x00) { // Disconnect
+                            val reason = packetData.readByteArray().decodeToString()
+                            println("Bot $id disconnected in Login. Reason: $reason")
+                            return
+                        } else {
+                            println("Bot $id received unknown packet in Login: $packetId")
+                            packetData.readByteArray()
+                        }
+                    }
+                    2 -> { // CONFIGURATION
+                        if (packetId == 0x03) { // Finish Configuration
+                            packetData.readByteArray()
+                            sendChannel.writePacket(0x03, compressionThreshold) {}
+                            state = 3
+                            println("Bot $id joined the game (Play State)")
+                        } else if (packetId == 0x02) { // Keep Alive in Config
+                            val keepAliveId = packetData.readByteArray()
+                            sendChannel.writePacket(0x02, compressionThreshold) {
+                                writeFully(keepAliveId)
+                            }
+                        } else if (packetId == 0x00) { // Clientbound Plugin Message
+                            packetData.readByteArray()
+                        } else if (packetId == 0x0e) { // Select Known Packs
+                            packetData.readByteArray()
+                            // Respond with 0 known packs
+                            sendChannel.writePacket(0x07, compressionThreshold) {
+                                writeVarInt(0)
+                            }
+                        } else {
+                            val unknownData = packetData.readByteArray()
+                            println("Bot $id received unknown packet in config: $packetId")
+                        }
+                    }
+                    3 -> { // PLAY
+                        // Keep alive ID in Play state
+                        packetData.readByteArray()
+                    }
+                }
             }
             
         } catch (e: Exception) {
