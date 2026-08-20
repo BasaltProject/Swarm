@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlin.random.Random
+import kotlin.math.sin
+import kotlin.math.cos
 
 enum class ProtocolState {
     LOGIN,
@@ -30,7 +32,13 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
     private var x: Double = 0.0
     private var y: Double = 0.0
     private var z: Double = 0.0
+    private var yaw: Float = 0f
+    private var pitch: Float = 0f
     private var yVelocity: Double = 0.0
+    
+    // Wandering state
+    private var isWandering: Boolean = false
+    private var wanderTicks: Int = 0
     private var onGround: Boolean = false
     private var positionReceived: Boolean = false
 
@@ -168,12 +176,50 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
             println("Bot $id starting physics loop")
             while (state == ProtocolState.PLAY) {
                 if (positionReceived) {
+                    // Update wandering state
+                    if (wanderTicks <= 0) {
+                        if (Random.nextDouble() < 0.2) { // 20% chance to start wandering
+                            isWandering = true
+                            wanderTicks = Random.nextInt(20, 100) // Wander for 1 to 5 seconds
+                            yaw = Random.nextFloat() * 360f - 180f
+                        } else {
+                            isWandering = false
+                            wanderTicks = Random.nextInt(20, 60) // Idle for 1 to 3 seconds
+                        }
+                    } else {
+                        wanderTicks--
+                    }
+
+                    // Random jumping
+                    if (onGround && isWandering && Random.nextDouble() < 0.05) {
+                        yVelocity = 0.42f.toDouble()
+                        onGround = false
+                    }
+
                     // Minecraft gravity
                     if (!onGround) {
                         yVelocity = (yVelocity - 0.08) * 0.98
                         if (yVelocity < -3.92) {
                             yVelocity = -3.92
                         }
+                    }
+
+                    // Movement
+                    if (isWandering && onGround) {
+                        val speed = 0.15
+                        val yawRad = yaw.toDouble() * kotlin.math.PI / 180.0
+                        val dx = -sin(yawRad) * speed
+                        val dz = cos(yawRad) * speed
+                        x += dx
+                        z += dz
+                    } else if (isWandering && !onGround) {
+                        // Slower movement in air
+                        val speed = 0.02
+                        val yawRad = yaw.toDouble() * kotlin.math.PI / 180.0
+                        val dx = -sin(yawRad) * speed
+                        val dz = cos(yawRad) * speed
+                        x += dx
+                        z += dz
                     }
 
                     y += yVelocity
@@ -187,11 +233,13 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
                         onGround = false
                     }
 
-                    // Send ServerboundPositionPacket (0x1e)
-                    sendChannel.writePacket(0x1e, compressionThreshold) {
+                    // Send ServerboundPositionLookPacket (0x1f)
+                    sendChannel.writePacket(0x1f, compressionThreshold) {
                         writeDouble(x)
                         writeDouble(y)
                         writeDouble(z)
+                        writeFloat(yaw)
+                        writeFloat(pitch)
                         writeByte(if (onGround) 1 else 0)
                     }
                 }

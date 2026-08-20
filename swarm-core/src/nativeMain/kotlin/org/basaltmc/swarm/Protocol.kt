@@ -60,6 +60,14 @@ fun Source.readDouble(): Double {
     return Double.fromBits(readLong())
 }
 
+fun Buffer.writeFloat(value: Float) {
+    writeInt(value.toRawBits())
+}
+
+fun Source.readFloat(): Float {
+    return Float.fromBits(readInt())
+}
+
 fun Buffer.writeString(value: String) {
     val bytes = value.encodeToByteArray()
     writeVarInt(bytes.size)
