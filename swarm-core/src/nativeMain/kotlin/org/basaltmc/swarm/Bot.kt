@@ -26,6 +26,14 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
     private var compressionThreshold = -1
     private lateinit var sendChannel: ByteWriteChannel
 
+    // Physics state
+    private var x: Double = 0.0
+    private var y: Double = 0.0
+    private var z: Double = 0.0
+    private var yVelocity: Double = 0.0
+    private var onGround: Boolean = false
+    private var positionReceived: Boolean = false
+
     suspend fun connect() = kotlinx.coroutines.coroutineScope {
         val selectorManager = SelectorManager(Dispatchers.Default)
         try {
@@ -159,7 +167,34 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
         launch {
             println("Bot $id starting physics loop")
             while (state == ProtocolState.PLAY) {
-                // TODO: Simulate gravity and movement, send Player Position packet
+                if (positionReceived) {
+                    // Minecraft gravity
+                    if (!onGround) {
+                        yVelocity = (yVelocity - 0.08) * 0.98
+                        if (yVelocity < -3.92) {
+                            yVelocity = -3.92
+                        }
+                    }
+
+                    y += yVelocity
+
+                    // Very simple floor collision to prevent falling into the void forever
+                    if (y <= 63.0) {
+                        y = 63.0
+                        yVelocity = 0.0
+                        onGround = true
+                    } else {
+                        onGround = false
+                    }
+
+                    // Send ServerboundPositionPacket (0x1e)
+                    sendChannel.writePacket(0x1e, compressionThreshold) {
+                        writeDouble(x)
+                        writeDouble(y)
+                        writeDouble(z)
+                        writeByte(if (onGround) 1 else 0)
+                    }
+                }
                 delay(50) // 20 TPS
             }
         }
@@ -175,9 +210,18 @@ class Bot(private val id: Int, private val host: String, private val port: Int, 
             }
             0x48 -> { // Player Position (Clientbound)
                 val teleportId = packetData.readVarInt()
-                // The rest of the payload is doubles/floats for position, we can ignore them for now
-                // just acknowledge the teleport so the server thinks we're fully loaded
-                packetData.readByteArray()
+                val parsedX = packetData.readDouble()
+                val parsedY = packetData.readDouble()
+                val parsedZ = packetData.readDouble()
+                
+                // Set our internal position based on server authority
+                x = parsedX
+                y = parsedY
+                z = parsedZ
+                yVelocity = 0.0
+                positionReceived = true
+                
+                packetData.readByteArray() // discard remaining bytes (dx, dy, dz, yaw, pitch, flags)
                 
                 sendChannel.writePacket(0x00, compressionThreshold) { // Accept Teleportation
                     writeVarInt(teleportId)

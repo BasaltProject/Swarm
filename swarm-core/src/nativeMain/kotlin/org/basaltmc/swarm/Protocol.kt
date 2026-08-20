@@ -52,6 +52,14 @@ fun Buffer.writeVarInt(value: Int) {
     } while (v != 0)
 }
 
+fun Buffer.writeDouble(value: Double) {
+    writeLong(value.toRawBits())
+}
+
+fun Source.readDouble(): Double {
+    return Double.fromBits(readLong())
+}
+
 fun Buffer.writeString(value: String) {
     val bytes = value.encodeToByteArray()
     writeVarInt(bytes.size)
