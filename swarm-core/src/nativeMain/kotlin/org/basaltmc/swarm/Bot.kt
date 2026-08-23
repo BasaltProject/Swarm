@@ -29,6 +29,8 @@ class Bot(
     private val port: Int,
     private val physicsEnabled: Boolean = false,
     private val target: SpawnTarget? = null,
+    /** Which version this bot pretends to be. Everything version-shaped comes from here. */
+    private val profile: ProtocolProfile = Protocols.newest,
 ) {
     private var state = ProtocolState.LOGIN
     private var compressionThreshold = -1
@@ -91,7 +93,7 @@ class Bot(
 
     private suspend fun sendHandshakeAndLogin() {
         sendChannel.writePacket(0x00, -1) {
-            writeVarInt(776) // Protocol version for 26.2
+            writeVarInt(profile.protocol)
             writeString(host)
             writeShort(port.toShort())
             writeVarInt(2) // Next state: Login
@@ -113,27 +115,41 @@ class Bot(
         scope: kotlinx.coroutines.CoroutineScope,
     ): Boolean {
         return when (state) {
-            ProtocolState.LOGIN -> handleLoginPacket(packetId, packetData)
+            ProtocolState.LOGIN -> handleLoginPacket(packetId, packetData, scope)
             ProtocolState.CONFIGURATION -> handleConfigurationPacket(packetId, packetData, scope)
             ProtocolState.PLAY -> handlePlayPacket(packetId, packetData)
         }
     }
 
-    private suspend fun handleLoginPacket(packetId: Int, packetData: Source): Boolean {
+    private suspend fun handleLoginPacket(
+        packetId: Int,
+        packetData: Source,
+        scope: kotlinx.coroutines.CoroutineScope,
+    ): Boolean {
         when (packetId) {
-            0x00 -> { // Disconnect
+            profile.login.clientboundDisconnect -> {
                 val reason = packetData.readByteArray().decodeToString()
                 println("Bot $id disconnected in Login. Reason: $reason")
                 return false
             }
-            0x02 -> { // Login Success
+            profile.login.clientboundFinished -> {
                 packetData.readByteArray() // discard payload
+                if (!profile.hasConfigurationPhase) {
+                    // Before 1.20.2 there is nothing to acknowledge: the game has already started.
+                    println("Bot $id received Login Success. Already playing.")
+                    state = ProtocolState.PLAY
+                    sendClientInformation()
+                    if (physicsEnabled) {
+                        scope.launchPhysicsLoop()
+                    }
+                    return true
+                }
                 println("Bot $id received Login Success. Sending Acknowledged.")
-                sendChannel.writePacket(0x03, compressionThreshold) {}
+                sendChannel.writePacket(profile.login.serverboundAcknowledged, compressionThreshold) {}
                 state = ProtocolState.CONFIGURATION
                 sendClientInformation()
             }
-            0x03 -> { // Login Compression
+            profile.login.clientboundCompression -> {
                 compressionThreshold = packetData.readVarInt()
                 println("Bot $id enabled compression. Threshold: $compressionThreshold")
             }
@@ -145,39 +161,43 @@ class Bot(
         return true
     }
 
+    /** What a real client of this version would refuse, checked on the way past. */
+    private val checks = Checks(profile.protocol) { println("Bot $id: $it") }
+
     private suspend fun handleConfigurationPacket(
         packetId: Int,
         packetData: Source,
         scope: kotlinx.coroutines.CoroutineScope,
     ): Boolean {
         when (packetId) {
-            0x00 -> { // Clientbound Plugin Message
-                packetData.readByteArray()
+            profile.configuration.clientboundDisconnect -> {
+                val reason = packetData.readByteArray().decodeToString()
+                println("Bot $id was disconnected while configuring. Reason: $reason")
+                return false
             }
-            0x01 -> { // Brand
-                packetData.readByteArray()
-            }
-            0x02 -> { // Keep Alive
+            profile.configuration.clientboundKeepAlive -> {
                 val keepAliveId = packetData.readByteArray()
-                sendChannel.writePacket(0x02, compressionThreshold) {
+                sendChannel.writePacket(profile.configuration.serverboundKeepAlive, compressionThreshold) {
                     write(keepAliveId)
                 }
             }
-            0x03 -> { // Finish Configuration
+            profile.configuration.clientboundFinish -> {
                 packetData.readByteArray()
-                sendChannel.writePacket(0x03, compressionThreshold) {}
+                sendChannel.writePacket(profile.configuration.serverboundFinish, compressionThreshold) {}
                 state = ProtocolState.PLAY
                 println("Bot $id joined the game (Play State)")
                 if (physicsEnabled) {
                     scope.launchPhysicsLoop()
                 }
             }
-            0x0e -> { // Select Known Packs
+            profile.configuration.clientboundSelectKnownPacks.takeIf { it >= 0 } -> {
                 packetData.readByteArray()
-                sendChannel.writePacket(0x07, compressionThreshold) {
+                sendChannel.writePacket(profile.configuration.serverboundSelectKnownPacks, compressionThreshold) {
                     writeVarInt(0)
                 }
             }
+            checks.packetId("minecraft:registry_data").takeIf { it >= 0 } -> checks.registryData(packetData)
+            checks.packetId("minecraft:update_tags").takeIf { it >= 0 } -> checks.tags(packetData)
             else -> {
                 packetData.readByteArray()
             }
@@ -256,17 +276,37 @@ class Bot(
 
     private suspend fun handlePlayPacket(packetId: Int, packetData: Source): Boolean {
         when (packetId) {
-            0x2c -> { // Keep Alive
+            profile.play.clientboundDisconnect -> {
+                val reason = packetData.readByteArray().decodeToString()
+                println("Bot $id was kicked. Reason: $reason")
+                return false
+            }
+            profile.play.clientboundKeepAlive -> {
                 val keepAliveId = packetData.readByteArray()
-                sendChannel.writePacket(0x1c, compressionThreshold) {
+                sendChannel.writePacket(profile.play.serverboundKeepAlive, compressionThreshold) {
                     write(keepAliveId)
                 }
             }
-            0x48 -> { // Player Position (Clientbound)
-                val teleportId = packetData.readVarInt()
-                val parsedX = packetData.readDouble()
-                val parsedY = packetData.readDouble()
-                val parsedZ = packetData.readDouble()
+            profile.play.clientboundPlayerPosition -> {
+                // Before 1.21.2 the id is at the end, after the angles and the relative flags.
+                val teleportId: Int
+                val parsedX: Double
+                val parsedY: Double
+                val parsedZ: Double
+                if (profile.positionStartsWithTeleportId) {
+                    teleportId = packetData.readVarInt()
+                    parsedX = packetData.readDouble()
+                    parsedY = packetData.readDouble()
+                    parsedZ = packetData.readDouble()
+                } else {
+                    parsedX = packetData.readDouble()
+                    parsedY = packetData.readDouble()
+                    parsedZ = packetData.readDouble()
+                    packetData.readFloat()
+                    packetData.readFloat()
+                    packetData.readByte()
+                    teleportId = if (profile.positionIsAcknowledged) packetData.readVarInt() else 0
+                }
                 
                 // Set our internal position based on server authority
                 x = parsedX
@@ -277,8 +317,10 @@ class Bot(
                 
                 packetData.readByteArray() // discard remaining bytes (dx, dy, dz, yaw, pitch, flags)
                 
-                sendChannel.writePacket(0x00, compressionThreshold) { // Accept Teleportation
-                    writeVarInt(teleportId)
+                if (profile.positionIsAcknowledged) {
+                    sendChannel.writePacket(profile.play.serverboundAcceptTeleportation, compressionThreshold) {
+                        writeVarInt(teleportId)
+                    }
                 }
 
                 // Every sync puts the bot back on the spawn, so the target is claimed again after
@@ -289,6 +331,8 @@ class Bot(
                     sendPositionLook()
                 }
             }
+            checks.packetId("minecraft:commands").takeIf { it >= 0 } -> checks.commands(packetData)
+            checks.packetId("minecraft:update_recipes").takeIf { it >= 0 } -> checks.updateRecipes(packetData)
             else -> {
                 packetData.readByteArray()
             }
@@ -297,7 +341,7 @@ class Bot(
     }
 
     private suspend fun sendPositionLook() {
-        sendChannel.writePacket(0x1f, compressionThreshold) { // ServerboundPositionLookPacket
+        sendChannel.writePacket(profile.play.serverboundMovePosRot, compressionThreshold) {
             writeDouble(x)
             writeDouble(y)
             writeDouble(z)
@@ -308,16 +352,24 @@ class Bot(
     }
 
     private suspend fun sendClientInformation() {
-        sendChannel.writePacket(0x00, compressionThreshold) {
+        val id =
+            if (profile.hasConfigurationPhase) {
+                profile.configuration.serverboundClientInformation
+            } else {
+                profile.play.serverboundClientInformation
+            }
+        sendChannel.writePacket(id, compressionThreshold) {
             writeString("en_us")
             writeByte(2) // view distance
             writeVarInt(0) // chat mode
             writeByte(1) // chat colors
             writeByte(0x7F) // skin parts
-            writeVarInt(1) // main hand
-            writeByte(0) // text filtering
-            writeByte(1) // server listings
-            writeVarInt(1) // particle status
+            if (profile.settingsHaveMainHand) writeVarInt(1)
+            if (profile.settingsHaveTextFiltering) writeByte(0)
+            if (profile.settingsHaveServerListing) writeByte(1)
+            if (profile.settingsHaveParticleStatus) {
+                writeVarInt(1) // particle status
+            }
         }
     }
 }
