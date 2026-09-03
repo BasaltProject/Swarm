@@ -11,9 +11,9 @@
 <p align="center">
   <img alt="Minecraft" src="https://img.shields.io/badge/Minecraft-26.2-62B47A?logo=minecraft&logoColor=white">
   <img alt="Protocol" src="https://img.shields.io/badge/protocol-776-62B47A">
-  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.4.10-7F52FF?logo=kotlin&logoColor=white">
-  <img alt="Kotlin/Native" src="https://img.shields.io/badge/Kotlin%2FNative-macOS_%7C_Linux_%7C_Windows-7F52FF?logo=kotlin&logoColor=white">
-  <img alt="Build" src="https://img.shields.io/badge/build-Gradle-02303A?logo=gradle&logoColor=white">
+  <img alt="C++" src="https://img.shields.io/badge/C%2B%2B-23-00599C?logo=cplusplus&logoColor=white">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS_%7C_Linux_%7C_Windows-00599C">
+  <img alt="Build" src="https://img.shields.io/badge/build-CMake-064F8C?logo=cmake&logoColor=white">
   <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-green">
 </p>
 
@@ -23,33 +23,41 @@
 
 Basalt Swarm is part of the Basalt Project ecosystem. It is a dedicated tool for connecting large bot swarms to test the performance, concurrency, and stability of Minecraft servers.
 
-Like the rest of the Basalt Project, it is written entirely in **Kotlin/Native** and distributed as a native binary, requiring no JVM to run. It speaks the Java Edition protocol and is designed to simulate realistic client loads with minimal overhead.
+Like the rest of the Basalt Project, it is written entirely in **C++23** and distributed as a native binary, requiring no JVM to run. It speaks the Java Edition protocol and is designed to simulate realistic client loads with minimal overhead.
 
 It speaks **more than one version**, from 1.8 to 26.2. A bot claims whatever version `--version` asks for, which is how a server that translates older clients gets tested: the same swarm can arrive as 26.2, as 26.1, or as a number nobody has released yet. See [Versions](docs/versions.md) for what is supported and how a version is added.
 
 ## Building
 
-Since Basalt Swarm is built with Kotlin Multiplatform (targeting Native), you can build the executable for your current operating system using Gradle:
+You need CMake 3.28 or newer, Ninja and Clang. Nothing else: zlib is vendored and built from source,
+and Swarm depends on no other Basalt repository.
 
 ```bash
 git clone https://github.com/BasaltProject/Swarm.git
 cd Swarm
-./gradlew assemble
+cmake --preset release
+cmake --build build/release
 ```
 
-The resulting binaries will be placed in `swarm-core/build/bin/`. Depending on your OS and the build type, you can find the executable at:
-- macOS (Apple Silicon): `swarm-core/build/bin/macosArm64/basalt-swarmReleaseExecutable/basalt-swarm.kexe`
-- Linux (x64): `swarm-core/build/bin/linuxX64/basalt-swarmReleaseExecutable/basalt-swarm.kexe`
-- Windows (x64): `swarm-core/build/bin/mingwX64/basalt-swarmReleaseExecutable/basalt-swarm.exe`
+The binary lands in `build/release/bin/`, named for what it is:
 
-*Note: You can also find `basalt-swarmDebugExecutable` for debug builds.*
+```
+build/release/bin/BasaltSwarm-26.2.0-dev-macOS-arm64
+```
+
+`cmake --preset debug` builds the debug tree, and `ctest --preset debug` runs the tests.
+
+Swarm deliberately does **not** consume [Wire](https://github.com/BasaltProject/Wire), the protocol
+layer the server and the proxy share. A bot that speaks through the same code as the server it is
+testing cannot catch a bug in that code: both sides make the same mistake and agree with each other.
+Its reader, its framing and its version table are its own for that reason.
 
 ## Usage
 
 You can run the generated native binary directly from your terminal. Swarm provides several CLI arguments to customize the stress test behavior:
 
 ```bash
-./basalt-swarm.kexe [options]
+./BasaltSwarm-26.2.0-dev-macOS-arm64 [options]
 ```
 
 ### Available Arguments:
@@ -65,32 +73,32 @@ You can run the generated native binary directly from your terminal. Swarm provi
 
 **Connect 500 bots locally:**
 ```bash
-./basalt-swarm.kexe --count 500
+./BasaltSwarm-26.2.0-dev-macOS-arm64 --count 500
 ```
 
 **Connect 100 bots to a specific server with physics enabled:**
 ```bash
-./basalt-swarm.kexe --ip 192.168.1.50:25565 --count 100 --physics
+./BasaltSwarm-26.2.0-dev-macOS-arm64 --ip 192.168.1.50:25565 --count 100 --physics
 ```
 
 **Connect 1000 bots with a very fast 10ms join delay:**
 ```bash
-./basalt-swarm.kexe --ip 127.0.0.1 -c 1000 -d 10 --physics
+./BasaltSwarm-26.2.0-dev-macOS-arm64 --ip 127.0.0.1 -c 1000 -d 10 --physics
 ```
 
 **Spread 16 bots 2048 blocks apart:**
 ```bash
-./basalt-swarm.kexe --count 16 --spread 2048 --physics
+./BasaltSwarm-26.2.0-dev-macOS-arm64 --count 16 --spread 2048 --physics
 ```
 
 **Connect 50 bots as 26.1 clients, to exercise a server's translation:**
 ```bash
-./basalt-swarm.kexe --count 50 --version 26.1 --physics
+./BasaltSwarm-26.2.0-dev-macOS-arm64 --count 50 --version 26.1 --physics
 ```
 
 **Ask a server what it does with a version nobody has released:**
 ```bash
-./basalt-swarm.kexe --count 1 --protocol 999
+./BasaltSwarm-26.2.0-dev-macOS-arm64 --count 1 --protocol 999
 ```
 
 ## License
