@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <set>
 #include <random>
 #include <string>
 #include <vector>
@@ -44,6 +45,10 @@ public:
 
     [[nodiscard]] std::int32_t problems() const noexcept { return checks_.problems(); }
 
+    /// How many other players this bot was shown. Zero on a server it is alone on, and zero is
+    /// also what a server that never announces anybody looks like.
+    [[nodiscard]] std::size_t playersSeen() const noexcept { return entitiesSeen_.size(); }
+
 private:
     void say(const std::string& line) const;
 
@@ -75,6 +80,8 @@ private:
     Options options_;
     TcpClient socket_;
     Checks checks_;
+    /// The entity ids of the other players this bot has been shown, so each is said once.
+    std::set<std::int32_t> entitiesSeen_;
     ProtocolState state_ = ProtocolState::Login;
     std::int32_t compressionThreshold_ = -1;
     bool running_ = true;

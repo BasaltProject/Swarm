@@ -241,6 +241,25 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
         answer.writeBytes(body.rest());
         return sendPacket(profile.play.serverboundKeepAlive, answer);
     }
+    if (profile.play.clientboundAddEntity >= 0 && packetId == profile.play.clientboundAddEntity) {
+        // Who else is here, as this client is told about them. A player entity is what another
+        // player looks like from inside the game, whichever edition they arrived on.
+        const std::int32_t entityId = body.readVarInt();
+        body.skip(16); // The uuid, which names the profile rather than the entity.
+        const std::int32_t entityType = body.readVarInt();
+        const double x = body.readDouble();
+        const double y = body.readDouble();
+        const double z = body.readDouble();
+        if (body.failed()) {
+            return true;
+        }
+        if (entityType == ProtocolProfile::kPlayerEntityType && entitiesSeen_.insert(entityId).second) {
+            say(name + " can see another player at " + std::to_string(x) + ", " + std::to_string(y) + ", " +
+                std::to_string(z) + ".");
+        }
+        static_cast<void>(body.rest());
+        return true;
+    }
     if (packetId == profile.play.clientboundPlayerPosition) {
         std::int32_t teleportId = 0;
         if (profile.positionStartsWithTeleportId) {

@@ -41,7 +41,14 @@ struct ProtocolProfile {
         std::int32_t serverboundKeepAlive = 28;
         std::int32_t serverboundAcceptTeleportation = 0;
         std::int32_t serverboundMovePosRot = 31;
+        /// Where the server announces an entity. -1 where this tool has not been told the number
+        /// for that version, and then a bot counts no entities rather than counting the wrong
+        /// packet: the id moves almost every version, and guessing it reads a chunk as a spawn.
+        std::int32_t clientboundAddEntity = -1;
     };
+
+    /// What a player looks like in the entity registry of the versions this bot names ids for.
+    static constexpr std::int32_t kPlayerEntityType = 156;
 
     std::int32_t protocol = 0;
     std::string label;

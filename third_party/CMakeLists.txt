@@ -3,4 +3,5 @@
 # platform it is pointed at is not much of one.
 
 add_subdirectory(doctest)
+add_subdirectory(mbedtls)
 add_subdirectory(zlib)

@@ -1,4 +1,5 @@
 #include <basalt/swarm/Bot.hpp>
+#include <basalt/swarm/bedrock/BedrockBot.hpp>
 #include <basalt/swarm/Protocols.hpp>
 #include <basalt/swarm/Spread.hpp>
 
@@ -51,6 +52,11 @@ struct Arguments {
     bool physicsEnabled = false;
     double spread = 0.0;
     ProtocolProfile profile = protocols::newest();
+    /// Which edition the swarm arrives on. Bedrock is another protocol on another transport, so it
+    /// is a different bot and not another profile of the same one.
+    bool bedrock = false;
+    std::int32_t stayMillis = 5000;
+    std::string chatLine;
     bool ok = true;
 };
 
@@ -103,6 +109,19 @@ struct Arguments {
                 return parsed;
             }
             i += 2;
+        } else if (flag == "--bedrock") {
+            parsed.bedrock = true;
+            // Nobody writing --bedrock means the Java port, so the default moves with the flag.
+            if (parsed.port == 25565) {
+                parsed.port = 19132;
+            }
+            i++;
+        } else if (flag == "--say") {
+            parsed.chatLine = std::string{next};
+            i += 2;
+        } else if (flag == "--stay") {
+            parsed.stayMillis = numberOf<std::int32_t>(next).value_or(parsed.stayMillis);
+            i += 2;
         } else if (flag == "--spread") {
             parsed.spread = doubleOf(next).value_or(parsed.spread);
             i += 2;
@@ -127,8 +146,30 @@ int main(int argc, char** argv) {
         parsed.spread > 0.0 ? std::to_string(static_cast<std::int64_t>(parsed.spread)) + " blocks apart" : "on the spawn";
     say("Target: " + parsed.host + ":" + std::to_string(parsed.port) + " | Bots: " + std::to_string(parsed.count) +
         " | Delay: " + std::to_string(parsed.delayMillis) + "ms | Physics: " +
-        (parsed.physicsEnabled ? "true" : "false") + " | Layout: " + layout + " | Speaking: " + parsed.profile.label +
-        " (" + std::to_string(parsed.profile.protocol) + ")");
+        (parsed.physicsEnabled ? "true" : "false") + " | Layout: " + layout + " | Speaking: " +
+        (parsed.bedrock ? "Bedrock " + std::string{bedrock::kBedrockVersion} + " (" +
+                              std::to_string(bedrock::kBedrockProtocol) + ")"
+                        : std::string{parsed.profile.label} + " (" + std::to_string(parsed.profile.protocol) + ")"));
+
+    if (parsed.bedrock) {
+        std::vector<std::jthread> bedrockBots;
+        bedrockBots.reserve(static_cast<std::size_t>(std::max(parsed.count, 0)));
+        for (std::int32_t id = 1; id <= parsed.count; ++id) {
+            bedrock::BedrockBot::Options options;
+            options.id = id;
+            options.host = parsed.host;
+            options.port = parsed.port;
+            options.stayMillis = parsed.stayMillis;
+            options.chatLine = parsed.chatLine;
+            options.say = say;
+            bedrockBots.emplace_back(
+                [moved = std::move(options)]() mutable { bedrock::BedrockBot{std::move(moved)}.run(); });
+            if (parsed.delayMillis > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{parsed.delayMillis});
+            }
+        }
+        return 0;
+    }
 
     const std::vector<SpawnTarget> targets = spawnGrid(parsed.count, parsed.spread);
     std::vector<std::jthread> bots;

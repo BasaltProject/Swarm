@@ -25,6 +25,8 @@ Basalt Swarm is part of the Basalt Project ecosystem. It is a dedicated tool for
 
 Like the rest of the Basalt Project, it is written entirely in **C++23** and distributed as a native binary, requiring no JVM to run. It speaks the Java Edition protocol and is designed to simulate realistic client loads with minimal overhead.
 
+It speaks **both editions**: Java from 1.8 to 26.2, and Bedrock with `--bedrock`.
+
 It speaks **more than one version**, from 1.8 to 26.2. A bot claims whatever version `--version` asks for, which is how a server that translates older clients gets tested: the same swarm can arrive as 26.2, as 26.1, or as a number nobody has released yet. See [Versions](docs/versions.md) for what is supported and how a version is added.
 
 ## Building
@@ -67,6 +69,8 @@ You can run the generated native binary directly from your terminal. Swarm provi
 - `--physics` (default: disabled): Enables the physics engine. Bots will simulate realistic Minecraft gravity, occasionally jump, and wander randomly around the X/Z plane while continuously sending position and rotation packets to the server.
 - `--no-physics`: Disables the physics engine. Bots will remain static.
 - `--version`, `--protocol <version>` (default: `26.2`): Which client version the bots claim to be. Takes a name (`26.1`) or a protocol number (`775`). A number this tool has no packet ids for is still sent, so a server's answer to a version it does not know can be tested; past the handshake those bots speak 26.2.
+- `--bedrock` (default: disabled): The bots arrive as Bedrock clients instead of Java ones: RakNet, the key exchange and the encrypted stream, all the way to spawning. The default port moves to `19132` with the flag, and `--version`, `--physics` and `--spread` do not apply to them yet.
+- `--stay <ms>` (default: `5000`): How long a Bedrock bot stays once it has spawned.
 - `--spread <blocks>` (default: disabled): Spreads the bots over a square grid centred on the spawn, that many blocks between neighbours. Without it every bot stands on the spawn, which only ever loads one area of the world. Each bot claims its cell again after every position sync the server sends.
 
 ### Examples

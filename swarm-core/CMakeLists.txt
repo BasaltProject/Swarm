@@ -7,13 +7,17 @@ add_library(swarm-core STATIC
     src/Nbt.cpp
     src/Protocols.cpp
     src/Socket.cpp
+    src/UdpSocket.cpp
+    src/bedrock/BedrockBot.cpp
+    src/bedrock/BedrockCrypto.cpp
+    src/bedrock/RakClient.cpp
     src/Spread.cpp
     src/Zlib.cpp
 )
 add_library(swarm::core ALIAS swarm-core)
 
 target_include_directories(swarm-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(swarm-core PUBLIC swarm::warnings swarm::sanitizers PRIVATE basalt::zlib)
+target_link_libraries(swarm-core PUBLIC swarm::warnings swarm::sanitizers PRIVATE basalt::zlib basalt::mbedtls)
 
 # The binary is named the way it is downloaded, the same as the server's.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -43,6 +47,10 @@ add_test(NAME swarm-checks-test COMMAND swarm-checks-test)
 add_executable(swarm-spread-test test/SpreadTest.cpp)
 target_link_libraries(swarm-spread-test PRIVATE swarm::core basalt::doctest)
 add_test(NAME swarm-spread-test COMMAND swarm-spread-test)
+
+add_executable(swarm-bedrock-test test/BedrockTest.cpp)
+target_link_libraries(swarm-bedrock-test PRIVATE swarm::core basalt::doctest)
+add_test(NAME swarm-bedrock-test COMMAND swarm-bedrock-test)
 
 add_executable(swarm-protocols-test test/ProtocolsTest.cpp)
 target_link_libraries(swarm-protocols-test PRIVATE swarm::core basalt::doctest)
