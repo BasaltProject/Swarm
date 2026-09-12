@@ -18,6 +18,66 @@ constexpr std::uint32_t kPacketIdMask = 0x3ffU;
         .count();
 }
 
+/// One item on the wire. Air is only its id: a zero there ends the item, and everything after it
+/// belongs to whatever comes next in the packet.
+void readItem(ByteReader& reader) {
+    if (readVarInt(reader) == 0) {
+        return;
+    }
+    static_cast<void>(readShortLE(reader)); // How many,
+    static_cast<void>(readVarUInt(reader)); // how damaged,
+    if (reader.readByte() != 0) {
+        static_cast<void>(readVarInt(reader)); // and which one of its kind, when the server counts them.
+    }
+    static_cast<void>(readVarInt(reader));  // Which block it places.
+    const std::uint32_t extra = readVarUInt(reader);
+    for (std::uint32_t at = 0; at < extra && !reader.failed(); ++at) {
+        static_cast<void>(reader.readByte()); // The nbt and the lists, which this bot does not read.
+    }
+}
+
+/// A run of metadata fields, which four packets carry and all four carry the same way.
+/// Answers the air supply when it is in there, and -1 when it is not.
+[[nodiscard]] std::int16_t readMetadata(ByteReader& reader, const int protocol) {
+    const std::uint32_t fields = readVarUInt(reader);
+    std::int16_t air = -1;
+    for (std::uint32_t at = 0; at < fields && !reader.failed(); ++at) {
+        const std::uint32_t id = readVarUInt(reader);
+        const std::uint32_t format = readVarUInt(reader);
+        if (nativeShapes(protocol) && static_cast<std::uint32_t>(reader.readByte()) != format) {
+            // Since 2168 the format goes out twice, and a client refuses the two disagreeing.
+            return -2;
+        }
+        switch (format) {
+        case 0:
+            static_cast<void>(reader.readByte());
+            break;
+        case 1: {
+            const auto value = static_cast<std::int16_t>(readShortLE(reader));
+            if (id == 7) {
+                air = value;
+            }
+            break;
+        }
+        case 2:
+            static_cast<void>(readVarInt(reader));
+            break;
+        case 3:
+            static_cast<void>(readFloatLE(reader));
+            break;
+        case 4:
+            static_cast<void>(readString(reader));
+            break;
+        case 7:
+            static_cast<void>(readVarLong(reader));
+            break;
+        default:
+            return -3;
+        }
+    }
+    return air;
+}
+
 } // namespace
 
 BedrockBot::BedrockBot(Options options) : options_(std::move(options)), rak_(options_.host, options_.port) {}
@@ -296,8 +356,9 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         static_cast<void>(readString(reader));  // The world's id,
         static_cast<void>(readString(reader));  // its name,
         static_cast<void>(readString(reader));  // the template it came from,
-        static_cast<void>(reader.readByte());   // whether it is a trial,
-        static_cast<void>(readVarInt(reader));  // how much movement it rewinds,
+        static_cast<void>(reader.readByte());  // whether it is a trial,
+        static_cast<void>(readVarInt(reader)); // how movement is settled, in three fields,
+        static_cast<void>(readVarInt(reader)); // how much of it it rewinds,
         static_cast<void>(reader.readByte());   // who breaks blocks,
         static_cast<void>(readLongLE(reader));  // what tick it is,
         static_cast<void>(readVarInt(reader));  // the enchantment seed,
@@ -407,9 +468,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             static_cast<void>(reader.readByte()); // A teacher,
             static_cast<void>(reader.readByte()); // the host,
             static_cast<void>(reader.readByte()); // or somebody's second player on one console.
-            if (nativeShapes(options_.protocol)) {
-                static_cast<void>(readIntLE(reader));
-            }
+            static_cast<void>(readIntLE(reader));  // What colour their name is drawn in.
             if (reader.failed()) {
                 problem("a player list line ran off the end of the packet");
                 break;
@@ -438,8 +497,37 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         const float x = readFloatLE(reader);
         const float y = readFloatLE(reader);
         const float z = readFloatLE(reader);
+        static_cast<void>(readFloatLE(reader)); // How fast they are going,
+        static_cast<void>(readFloatLE(reader));
+        static_cast<void>(readFloatLE(reader));
+        static_cast<void>(readFloatLE(reader)); // and which way they are looking, in three.
+        static_cast<void>(readFloatLE(reader));
+        static_cast<void>(readFloatLE(reader));
+        readItem(reader);
+        static_cast<void>(readVarInt(reader)); // Which game type they are on.
+        static_cast<void>(readMetadata(reader, options_.protocol));
+        static_cast<void>(readVarUInt(reader)); // Entity properties, of which a player has none.
+        static_cast<void>(readVarUInt(reader));
+        static_cast<void>(readLongLE(reader)); // The abilities: whose they are,
+        static_cast<void>(reader.readByte());  // what they may do here,
+        static_cast<void>(reader.readByte());  // what commands they may run,
+        const std::uint32_t layers = readVarUInt(reader);
+        for (std::uint32_t at = 0; at < layers && !reader.failed(); ++at) {
+            static_cast<void>(readIntLE(reader)); // and a layer each of which is five numbers.
+            static_cast<void>(readIntLE(reader));
+            static_cast<void>(readIntLE(reader));
+            static_cast<void>(readIntLE(reader));
+            static_cast<void>(readFloatLE(reader));
+        }
+        static_cast<void>(readVarUInt(reader)); // What they are riding or ridden by.
+        static_cast<void>(readString(reader));  // Which device,
+        static_cast<void>(readIntLE(reader));   // of which platform.
         if (reader.failed()) {
             problem("a player was added with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a player was added and left " + std::to_string(reader.remaining()) + " bytes unread");
             return;
         }
         if (runtime == runtimeEntityId_) {
@@ -530,48 +618,17 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         return;
     }
     case Packet::SetEntityData: {
-        // Metadata for one entity. Read field by field, because a shape read wrong here is a shape
-        // read wrong in every packet that carries metadata.
+        // Metadata for one entity, read field by field: a shape read wrong here is a shape read
+        // wrong in every packet that carries metadata.
         static_cast<void>(readVarULong(reader));
-        const std::uint32_t fields = readVarUInt(reader);
-        std::int16_t air = -1;
-        for (std::uint32_t at = 0; at < fields && !reader.failed(); ++at) {
-            const std::uint32_t id = readVarUInt(reader);
-            const std::uint32_t format = readVarUInt(reader);
-            if (nativeShapes(options_.protocol)) {
-                // Since 2168 the format goes out twice, and a client refuses the two disagreeing.
-                if (static_cast<std::uint32_t>(reader.readByte()) != format) {
-                    problem("a metadata field named its format twice and said two different things");
-                    return;
-                }
-            }
-            switch (format) {
-            case 0:
-                static_cast<void>(reader.readByte());
-                break;
-            case 1: {
-                const auto value = static_cast<std::int16_t>(readShortLE(reader));
-                if (id == 7) {
-                    air = value;
-                }
-                break;
-            }
-            case 2:
-                static_cast<void>(readVarInt(reader));
-                break;
-            case 3:
-                static_cast<void>(readFloatLE(reader));
-                break;
-            case 4:
-                static_cast<void>(readString(reader));
-                break;
-            case 7:
-                static_cast<void>(readVarLong(reader));
-                break;
-            default:
-                problem("a metadata field arrived in a format this bot cannot read: " + std::to_string(format));
-                return;
-            }
+        const std::int16_t air = readMetadata(reader, options_.protocol);
+        if (air == -2) {
+            problem("a metadata field named its format twice and said two different things");
+            return;
+        }
+        if (air == -3) {
+            problem("a metadata field arrived in a format this bot cannot read");
+            return;
         }
         static_cast<void>(readVarUInt(reader)); // Entity properties, of which this server sends none.
         static_cast<void>(readVarUInt(reader));
