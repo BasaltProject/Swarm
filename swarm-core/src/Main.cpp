@@ -61,6 +61,8 @@ struct Arguments {
     std::vector<std::int32_t> bedrockProtocols{bedrock::kBedrockProtocol};
     std::string chatLine;
     std::string commandLine;
+    std::string digAt;
+    std::string putAt;
     bool ok = true;
 };
 
@@ -146,6 +148,12 @@ struct Arguments {
                 parsed.bedrockProtocols = std::move(asked);
             }
             i += 2;
+        } else if (flag == "--dig") {
+            parsed.digAt = std::string{next};
+            i += 2;
+        } else if (flag == "--put") {
+            parsed.putAt = std::string{next};
+            i += 2;
         } else if (flag == "--run") {
             parsed.commandLine = std::string{next};
             i += 2;
@@ -195,6 +203,8 @@ int main(int argc, char** argv) {
                 parsed.bedrockProtocols[static_cast<std::size_t>(id - 1) % parsed.bedrockProtocols.size()];
             options.chatLine = parsed.chatLine;
             options.commandLine = parsed.commandLine;
+            options.digAt = parsed.digAt;
+            options.putAt = parsed.putAt;
             options.say = say;
             bedrockBots.emplace_back(
                 [moved = std::move(options)]() mutable { bedrock::BedrockBot{std::move(moved)}.run(); });

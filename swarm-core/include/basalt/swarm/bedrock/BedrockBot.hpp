@@ -31,6 +31,10 @@ public:
         std::string chatLine;
         /// A command the bot runs once it is in, without its slash, or nothing to run none.
         std::string commandLine;
+        /// A block to break once it is in, as x,y,z, or nothing to break none.
+        std::string digAt;
+        /// A block to click with what is in hand, as x,y,z, or nothing to click none.
+        std::string putAt;
         std::function<void(const std::string&)> say;
     };
 
@@ -123,6 +127,10 @@ private:
     float y_ = 0.0F;
     float z_ = 0.0F;
     std::uint64_t tick_ = 0;
+
+    /// The one block action or click still to send, which goes out with the next input.
+    bool digSent_ = false;
+    bool putSent_ = false;
     /// Who the server listed, by uuid, and who it actually drew, by entity id.
     std::map<std::string, std::string> listed_;
     std::map<std::uint64_t, std::string> seen_;

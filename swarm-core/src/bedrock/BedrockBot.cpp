@@ -66,6 +66,18 @@ struct Stack {
     return {id, count, data};
 }
 
+/// A point written as three numbers with commas between them.
+[[nodiscard]] std::array<std::int32_t, 3> pointOf(const std::string& text) {
+    std::array<std::int32_t, 3> point{0, 0, 0};
+    std::size_t at = 0;
+    for (std::size_t part = 0; part < 3 && at <= text.size(); ++part) {
+        const std::size_t comma = std::min(text.find(',', at), text.size());
+        point[part] = static_cast<std::int32_t>(std::strtol(text.substr(at, comma - at).c_str(), nullptr, 10));
+        at = comma + 1;
+    }
+    return point;
+}
+
 /// One stack where it is named rather than moved: the creative menu and an entity's hand.
 void readItemInstance(ByteReader& reader) {
     if (readVarInt(reader) == 0) {
@@ -1154,6 +1166,14 @@ void BedrockBot::sendChat(const std::string& line) {
 }
 
 void BedrockBot::sendAuthInput() {
+    // One block action or one click, the first time round and never again: what is being tested is
+    // that the server reads them, not that a bot can mine.
+    const bool dig = !options_.digAt.empty() && !digSent_;
+    const bool put = !options_.putAt.empty() && !putSent_;
+    const std::array<std::int32_t, 3> at = pointOf(dig ? options_.digAt : options_.putAt);
+    digSent_ = digSent_ || dig;
+    putSent_ = putSent_ || put;
+
     ByteWriter body;
     writeFloatLE(body, 0.0F); // Pitch.
     writeFloatLE(body, 0.0F); // Yaw.
@@ -1163,7 +1183,31 @@ void BedrockBot::sendAuthInput() {
     writeFloatLE(body, 0.0F); // Where it is trying to move, sideways.
     writeFloatLE(body, 0.0F); // The same, forwards.
     writeFloatLE(body, 0.0F); // Head yaw.
-    body.writeByte(0);        // No input flags.
+    // Which flags are on, which is what says the pieces below are there at all.
+    if (options_.protocol >= 2168) {
+        body.writeByte(1);
+        writeVarUInt(body, static_cast<std::uint32_t>((dig ? 1 : 0) + (put ? 1 : 0)));
+        if (put) {
+            writeVarInt(body, 34);
+        }
+        if (dig) {
+            writeVarInt(body, 35);
+        }
+    } else {
+        // One long varint of bits. Thirty-four and thirty-five are the two this bot ever sets, so
+        // the run is five bytes at most.
+        std::uint64_t bits = 0;
+        bits |= put ? (1ULL << 34U) : 0;
+        bits |= dig ? (1ULL << 35U) : 0;
+        for (int part = 0; part < 6; ++part) {
+            const std::uint8_t seven = static_cast<std::uint8_t>((bits >> (7U * static_cast<std::uint32_t>(part))) & 0x7fU);
+            const bool more = (bits >> (7U * static_cast<std::uint32_t>(part + 1))) != 0;
+            body.writeByte(static_cast<std::uint8_t>(seven | (more ? 0x80U : 0U)));
+            if (!more) {
+                break;
+            }
+        }
+    }
     writeVarUInt(body, 0);    // Input mode: none.
     writeVarUInt(body, 0);    // Play mode: normal.
     writeVarInt(body, 0);     // Interaction model: touch.
@@ -1173,9 +1217,61 @@ void BedrockBot::sendAuthInput() {
     writeFloatLE(body, 0.0F); // Delta.
     writeFloatLE(body, 0.0F);
     writeFloatLE(body, 0.0F);
-    for (int optional = 0; optional < 5; ++optional) {
-        body.writeByte(0); // No item use, no stack request, no actions, no vehicle.
+    // The five optional pieces. From 2168 each is a pair of booleans, the first saying the field
+    // is there at all; below it they are not written, and a flag alone decides.
+    const auto optional = [this, &body](const bool present) {
+        if (options_.protocol >= 2168) {
+            body.writeByte(1);
+            body.writeByte(present ? 1 : 0);
+            return present;
+        }
+        return present;
+    };
+    if (optional(put)) {
+        {
+            writeVarInt(body, 0);  // No legacy request,
+            writeVarUInt(body, 0); // and nothing moved between windows.
+            writeVarUInt(body, 0); // A click on a block.
+            writeVarInt(body, at[0]);
+            writeVarUInt(body, static_cast<std::uint32_t>(at[1]));
+            writeVarInt(body, at[2]);
+            writeVarInt(body, 1); // On its top,
+            writeVarInt(body, 0); // with what is in the first slot.
+            // What is in hand, which for this bot is the first item the server named: enough for
+            // the server to see an id it gave out come back.
+            writeVarInt(body, 1);
+            writeShortLE(body, 1);  // One of them,
+            writeVarUInt(body, 0);  // undamaged,
+            body.writeByte(0);      // with no net id,
+            writeVarInt(body, 0);   // placing no block of its own
+            writeVarUInt(body, 0);  // and nothing written on it.
+            writeFloatLE(body, x_); // Where this bot is,
+            writeFloatLE(body, y_);
+            writeFloatLE(body, z_);
+            writeFloatLE(body, 0.5F); // and where on the face it clicked.
+            writeFloatLE(body, 1.0F);
+            writeFloatLE(body, 0.5F);
+            writeVarUInt(body, 0); // Which block it thinks is there.
+            if (options_.protocol >= 975) {
+                body.writeByte(0);
+            }
+        }
     }
+    static_cast<void>(optional(false)); // No request to move stacks around.
+    if (optional(dig)) {
+        if (options_.protocol >= 2168) {
+            writeVarUInt(body, 1);
+        } else {
+            writeVarInt(body, 1);
+        }
+        writeVarInt(body, 26); // Broken, as the client predicts it.
+        writeVarInt(body, at[0]);
+        writeVarInt(body, at[1]);
+        writeVarInt(body, at[2]);
+        writeVarInt(body, 1); // Hit from above.
+    }
+    static_cast<void>(optional(false)); // Riding nothing,
+    static_cast<void>(optional(false)); // and predicting nothing about it.
     writeFloatLE(body, 0.0F); // Analog move.
     writeFloatLE(body, 0.0F);
     writeFloatLE(body, 0.0F); // Camera orientation.
