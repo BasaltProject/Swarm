@@ -69,6 +69,12 @@ public:
     /// How many times the server said this bot, or somebody beside it, had been hit.
     [[nodiscard]] std::int32_t hits() const noexcept { return hits_; }
 
+    /// How many item names the server declared, which is the palette a window is read against.
+    [[nodiscard]] std::int32_t itemNames() const noexcept { return itemNames_; }
+
+    /// How many stacks the server put in this bot's windows.
+    [[nodiscard]] std::int32_t carried() const noexcept { return carried_; }
+
     /// How many single blocks the server said had changed.
     [[nodiscard]] std::int32_t blockChanges() const noexcept { return blockChanges_; }
 
@@ -129,6 +135,8 @@ private:
     std::int32_t particles_ = 0;
     std::int32_t effects_ = 0;
     std::int32_t hits_ = 0;
+    std::int32_t itemNames_ = 0;
+    std::int32_t carried_ = 0;
 };
 
 } // namespace basalt::swarm::bedrock

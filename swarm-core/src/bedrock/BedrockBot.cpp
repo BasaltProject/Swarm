@@ -20,12 +20,20 @@ constexpr std::uint32_t kPacketIdMask = 0x3ffU;
 
 /// One item on the wire. Air is only its id: a zero there ends the item, and everything after it
 /// belongs to whatever comes next in the packet.
-void readItem(ByteReader& reader) {
-    if (readVarInt(reader) == 0) {
-        return;
+/// What a stack says about itself, for a bot that wants to print it.
+struct Stack {
+    std::int32_t id = 0;
+    std::int32_t count = 0;
+    std::int32_t data = 0;
+};
+
+[[nodiscard]] Stack readItem(ByteReader& reader) {
+    const std::int32_t id = readVarInt(reader);
+    if (id == 0) {
+        return {};
     }
-    static_cast<void>(readShortLE(reader)); // How many,
-    static_cast<void>(readVarUInt(reader)); // how damaged,
+    const auto count = static_cast<std::int32_t>(readShortLE(reader));
+    const auto data = static_cast<std::int32_t>(readVarUInt(reader));
     if (reader.readByte() != 0) {
         static_cast<void>(readVarInt(reader)); // and which one of its kind, when the server counts them.
     }
@@ -33,6 +41,42 @@ void readItem(ByteReader& reader) {
     const std::uint32_t extra = readVarUInt(reader);
     for (std::uint32_t at = 0; at < extra && !reader.failed(); ++at) {
         static_cast<void>(reader.readByte()); // The nbt and the lists, which this bot does not read.
+    }
+    return {id, count, data};
+}
+
+/// One stack as a window carries it. Below 1001 it is the same shape an entity's hand uses; from
+/// 1001 the id is a short and an empty stack still says all of itself.
+[[nodiscard]] Stack readWindowItem(ByteReader& reader, const int protocol) {
+    if (protocol < 1001) {
+        return readItem(reader);
+    }
+    const auto id = static_cast<std::int32_t>(static_cast<std::int16_t>(readShortLE(reader)));
+    const auto count = static_cast<std::int32_t>(readShortLE(reader));
+    const auto data = static_cast<std::int32_t>(readVarUInt(reader));
+    if (reader.readByte() != 0) {
+        static_cast<void>(readVarUInt(reader)); // which of the three kinds of id it is,
+        static_cast<void>(readVarInt(reader));  // and which one of its kind.
+    }
+    static_cast<void>(readVarInt(reader)); // Which block it places.
+    const std::uint32_t extra = readVarUInt(reader);
+    for (std::uint32_t at = 0; at < extra && !reader.failed(); ++at) {
+        static_cast<void>(reader.readByte());
+    }
+    return {id, count, data};
+}
+
+/// One stack where it is named rather than moved: the creative menu and an entity's hand.
+void readItemInstance(ByteReader& reader) {
+    if (readVarInt(reader) == 0) {
+        return;
+    }
+    static_cast<void>(readShortLE(reader)); // How many,
+    static_cast<void>(readVarUInt(reader)); // how damaged,
+    static_cast<void>(readVarInt(reader));  // and which block it places.
+    const std::uint32_t extra = readVarUInt(reader);
+    for (std::uint32_t at = 0; at < extra && !reader.failed(); ++at) {
+        static_cast<void>(reader.readByte());
     }
 }
 
@@ -503,7 +547,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         static_cast<void>(readFloatLE(reader)); // and which way they are looking, in three.
         static_cast<void>(readFloatLE(reader));
         static_cast<void>(readFloatLE(reader));
-        readItem(reader);
+        static_cast<void>(readItem(reader));
         static_cast<void>(readVarInt(reader)); // Which game type they are on.
         static_cast<void>(readMetadata(reader, options_.protocol));
         static_cast<void>(readVarUInt(reader)); // Entity properties, of which a player has none.
@@ -615,6 +659,93 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         ++effects_;
         say("effect " + std::to_string(id) + " level " + std::to_string(amplifier + 1) + " for " +
             std::to_string(ticks) + " tick(s), event " + std::to_string(static_cast<std::int32_t>(event)));
+        return;
+    }
+    case Packet::ItemComponent: {
+        // Which item is which number. Read whole: everything a window says afterwards is read
+        // against this list, so a line misread here is every stack misread later.
+        const std::uint32_t names = readVarUInt(reader);
+        for (std::uint32_t at = 0; at < names && !reader.failed(); ++at) {
+            static_cast<void>(readString(reader));  // Its name,
+            static_cast<void>(readShortLE(reader)); // the number it answers to,
+            static_cast<void>(reader.readByte());   // whether components drive it,
+            static_cast<void>(readVarInt(reader)); // which version of an item it is,
+            // The components, which for everything this server sends is an empty compound: a tag
+            // byte, a name of nothing and the end of it.
+            if (reader.readByte() != 0x0a || readVarUInt(reader) != 0 || reader.readByte() != 0x00) {
+                problem("an item arrived with components, which this server does not send");
+                return;
+            }
+        }
+        if (reader.failed()) {
+            problem("the item list ran off the end of the packet");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("the item list left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        itemNames_ = static_cast<std::int32_t>(names);
+        say("told about " + std::to_string(names) + " item name(s)");
+        return;
+    }
+    case Packet::CreativeContent: {
+        // What a player in creative may take. Read whole: the menu is two arrays and the second is
+        // as long as the item list, so a line misread is every line after it misread.
+        const std::uint32_t groups = readVarUInt(reader);
+        for (std::uint32_t at = 0; at < groups && !reader.failed(); ++at) {
+            static_cast<void>(reader.readByte()); // Which tab it sits under,
+            static_cast<void>(readString(reader)); // what it is called,
+            readItemInstance(reader);              // and what is drawn on it.
+        }
+        const std::uint32_t offered = readVarUInt(reader);
+        for (std::uint32_t at = 0; at < offered && !reader.failed(); ++at) {
+            static_cast<void>(readVarUInt(reader)); // Which stack this is,
+            readItemInstance(reader);               // what it is,
+            static_cast<void>(readVarUInt(reader)); // and which group it is in.
+        }
+        if (reader.failed()) {
+            problem("the creative menu ran off the end of the packet");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("the creative menu left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        say("creative menu: " + std::to_string(offered) + " item(s) in " + std::to_string(groups) + " group(s)");
+        return;
+    }
+    case Packet::InventoryContent: {
+        // One window's worth of slots.
+        const std::uint32_t containerId = readVarUInt(reader);
+        const std::uint32_t slots = readVarUInt(reader);
+        std::string held;
+        std::int32_t filled = 0;
+        for (std::uint32_t at = 0; at < slots && !reader.failed(); ++at) {
+            const Stack stack = readWindowItem(reader, options_.protocol);
+            if (stack.id == 0) {
+                continue;
+            }
+            ++filled;
+            held += (held.empty() ? "" : ", ") + std::to_string(stack.count) + "x item " +
+                    std::to_string(stack.id) + (stack.data == 0 ? "" : "/" + std::to_string(stack.data));
+        }
+        static_cast<void>(reader.readByte()); // Which part of a window this is,
+        if (reader.readByte() != 0) {
+            static_cast<void>(readIntLE(reader)); // and its own id when it has one.
+        }
+        static_cast<void>(readWindowItem(reader, options_.protocol)); // What is stored beside it.
+        if (reader.failed()) {
+            problem("a window arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a window left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        carried_ += filled;
+        say("window " + std::to_string(containerId) + " has " + std::to_string(slots) + " slot(s)" +
+            (held.empty() ? "" : ": " + held));
         return;
     }
     case Packet::SetEntityData: {
