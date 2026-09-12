@@ -2,6 +2,9 @@
 #include <basalt/swarm/Nbt.hpp>
 
 #include <cstdint>
+#include <functional>
+#include <string>
+#include <string_view>
 
 namespace basalt::swarm::nbt {
 namespace {
@@ -26,8 +29,7 @@ constexpr std::int32_t kMaxDepth = 512;
 
 void skipPayload(ByteReader& reader, std::int32_t type, std::int32_t depth);
 
-void skipCount(ByteReader& reader, const std::int32_t count, const std::int32_t elements,
-               const std::int32_t depth) {
+void skipCount(ByteReader& reader, const std::int32_t count, const std::int32_t elements, const std::int32_t depth) {
     for (std::int32_t i = 0; i < count && !reader.failed(); ++i) {
         if (elements != kEnd) {
             skipPayload(reader, elements, depth + 1);
@@ -90,7 +92,48 @@ void skipPayload(ByteReader& reader, const std::int32_t type, const std::int32_t
     }
 }
 
+/// Reads one name, which in NBT is a length and then the bytes.
+[[nodiscard]] std::string readName(ByteReader& reader) {
+    const auto length = static_cast<std::size_t>(static_cast<std::uint16_t>(reader.readShort()));
+    std::string name;
+    name.reserve(length);
+    for (std::size_t index = 0; index < length && !reader.failed(); ++index) {
+        name += static_cast<char>(reader.readByte());
+    }
+    return name;
+}
+
+/// Walks a compound, naming its members, and descends one more level into the compounds inside it.
+void walkCompound(ByteReader& reader, const std::function<void(std::string_view)>& onKey, const std::string& prefix,
+                  const std::int32_t levelsLeft) {
+    while (!reader.failed()) {
+        const std::int32_t entry = reader.readByte();
+        if (entry == kEnd) {
+            return;
+        }
+        const std::string name = readName(reader);
+        const std::string path = prefix.empty() ? name : prefix + "." + name;
+        onKey(path);
+        if (entry == kCompound && levelsLeft > 0) {
+            walkCompound(reader, onKey, path, levelsLeft - 1);
+            continue;
+        }
+        skipPayload(reader, entry, 1);
+    }
+}
+
 } // namespace
+
+void walkKeys(ByteReader& reader, const std::function<void(std::string_view path)>& onKey) {
+    const std::int32_t type = reader.readByte();
+    if (type != kCompound) {
+        if (type != kEnd) {
+            skipPayload(reader, type, 0);
+        }
+        return;
+    }
+    walkCompound(reader, onKey, std::string{}, 1);
+}
 
 void skip(ByteReader& reader) {
     const std::int32_t type = reader.readByte();

@@ -99,7 +99,15 @@ void Checks::registryData(ByteReader& data) {
             complain(registry + " has no " + entry + " in this version, and its element will not parse");
         }
         if (data.readByte() != 0) {
-            nbt::skip(data);
+            // What the element is made of, not only what it is called. A member this version never
+            // had is the other half of the same failure: the client refuses the registry and never
+            // finishes joining.
+            nbt::walkKeys(data, [this, &registry](const std::string_view path) {
+                if (!knownVersions::hasEntryKey(protocol_, registry, path)) {
+                    complain("an element of " + registry + " is made of " + std::string{path} +
+                             ", which nothing in this version has");
+                }
+            });
         }
     }
 }
@@ -119,8 +127,8 @@ void Checks::tags(ByteReader& data) {
             for (std::int32_t i = 0; i < ids && sane(data, 0); ++i) {
                 const std::int32_t id = data.readVarInt();
                 if (size >= 0 && id >= size) {
-                    complain("a tag of " + registry + " points at " + std::to_string(id) + ", and that registry ends at " +
-                             std::to_string(size - 1));
+                    complain("a tag of " + registry + " points at " + std::to_string(id) +
+                             ", and that registry ends at " + std::to_string(size - 1));
                 }
             }
         }

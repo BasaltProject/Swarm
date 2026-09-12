@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <string_view>
+
 namespace basalt::swarm {
 
 class ByteReader;
@@ -12,6 +15,13 @@ namespace nbt {
 
 /// Skips one tag, id and all, as it travels in a packet: no name on the outermost one.
 void skip(ByteReader& reader);
+
+/// The same walk, saying what it passes: every member of the outermost compound, and every member
+/// of the compounds directly inside it, as `outer.inner`.
+///
+/// Two levels because that is where a version's shape lives. A list is named but not entered: what
+/// is inside one is repetition, not shape.
+void walkKeys(ByteReader& reader, const std::function<void(std::string_view path)>& onKey);
 
 } // namespace nbt
 

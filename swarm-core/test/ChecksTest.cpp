@@ -1,8 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest.h>
-
 #include <basalt/swarm/Bytes.hpp>
 #include <basalt/swarm/Checks.hpp>
+
+#include <doctest.h>
 
 #include <string>
 #include <vector>
@@ -127,4 +127,56 @@ TEST_CASE("a version this tool knows nothing about is never reported as broken")
     checks.tags(reader);
     CHECK(checks.problems() == 0);
     CHECK_FALSE(checks.checkable());
+}
+
+/// The fifth: an element whose *shape* the version does not have.
+///
+/// 26.1 gave every animal variant a second set of assets for its baby, and gave a timeline a clock.
+/// A client older than that reads a registry element against the shape it was compiled with, so a
+/// member it has never seen costs it the whole registry and the connection with it.
+TEST_CASE("a registry element made of members the version never had is caught") {
+    std::vector<std::string> complaints;
+    Checks checks{kProtocol1_21_11, [&complaints](const std::string& what) { complaints.push_back(what); }};
+
+    ByteWriter body;
+    body.writeVarString("minecraft:wolf_variant");
+    body.writeVarInt(1);
+    body.writeVarString("minecraft:pale");
+    body.writeByte(1);  // The element is there.
+    body.writeByte(10); // A compound, which is what an element is.
+    for (const std::string& member : {std::string{"assets"}, std::string{"baby_assets"}}) {
+        body.writeByte(10); // Each member is a compound of its own.
+        body.writeShort(static_cast<std::int16_t>(member.size()));
+        body.writeBytes({reinterpret_cast<const std::uint8_t*>(member.data()), member.size()});
+        body.writeByte(0); // Empty, which is enough to be walked past.
+    }
+    body.writeByte(0); // The end of the element.
+
+    ByteReader reader{body.bytes()};
+    checks.registryData(reader);
+    REQUIRE(checks.problems() == 1);
+    CHECK(complaints[0].find("baby_assets") != std::string::npos);
+}
+
+/// And the same element, sent to the version that invented it, is not a problem.
+TEST_CASE("what a version does have is not complained about") {
+    std::vector<std::string> complaints;
+    Checks checks{kProtocol26_1, [&complaints](const std::string& what) { complaints.push_back(what); }};
+
+    ByteWriter body;
+    body.writeVarString("minecraft:wolf_variant");
+    body.writeVarInt(1);
+    body.writeVarString("minecraft:pale");
+    body.writeByte(1);
+    body.writeByte(10);
+    const std::string member = "baby_assets";
+    body.writeByte(10);
+    body.writeShort(static_cast<std::int16_t>(member.size()));
+    body.writeBytes({reinterpret_cast<const std::uint8_t*>(member.data()), member.size()});
+    body.writeByte(0);
+    body.writeByte(0);
+
+    ByteReader reader{body.bytes()};
+    checks.registryData(reader);
+    CHECK(checks.problems() == 0);
 }

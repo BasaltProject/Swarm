@@ -60,8 +60,8 @@ void forEachWord(const std::string_view text, Yield&& yield) {
 /// A swarm is many threads asking the same questions about the same one or two versions, so the
 /// cache is shared and the lock is taken once per version rather than once per question.
 template <typename Value, typename Parse>
-[[nodiscard]] const Value& cached(std::map<std::int32_t, Value>& cache, std::mutex& lock,
-                                  const std::int32_t protocol, Parse&& parse) {
+[[nodiscard]] const Value& cached(std::map<std::int32_t, Value>& cache, std::mutex& lock, const std::int32_t protocol,
+                                  Parse&& parse) {
     const std::lock_guard<std::mutex> guard(lock);
     const auto found = cache.find(protocol);
     if (found != cache.end()) {
@@ -74,6 +74,8 @@ std::mutex idsLock;
 std::map<std::int32_t, std::map<std::string, std::int32_t, std::less<>>> idsCache;
 std::mutex entriesLock;
 std::map<std::int32_t, std::set<std::string, std::less<>>> entriesCache;
+std::mutex keysLock;
+std::map<std::int32_t, std::set<std::string, std::less<>>> keysCache;
 std::mutex namesLock;
 std::map<std::int32_t, std::set<std::string, std::less<>>> namesCache;
 std::mutex sizesLock;
@@ -84,8 +86,8 @@ std::map<std::int32_t, std::map<std::string, std::int32_t, std::less<>>> sizesCa
 bool isChecked(const std::int32_t protocol) { return !valueFor(tables::registryNames(), protocol).empty(); }
 
 std::int32_t packetId(const std::int32_t protocol, const std::string_view packet) {
-    const auto& ids = cached(idsCache, idsLock, protocol,
-                             [protocol] { return pairsOf(valueFor(tables::packetIds(), protocol)); });
+    const auto& ids =
+        cached(idsCache, idsLock, protocol, [protocol] { return pairsOf(valueFor(tables::packetIds(), protocol)); });
     const auto found = ids.find(packet);
     return found == ids.end() ? -1 : found->second;
 }
@@ -109,6 +111,21 @@ bool hasEntry(const std::int32_t protocol, const std::string_view registry, cons
         return true;
     }
     return entries.contains(prefix + std::string{entry});
+}
+
+bool hasEntryKey(const std::int32_t protocol, const std::string_view registry, const std::string_view member) {
+    const auto& keys =
+        cached(keysCache, keysLock, protocol, [protocol] { return wordsOf(valueFor(tables::entryKeys(), protocol)); });
+    if (keys.empty()) {
+        return true;
+    }
+    const std::string prefix = std::string{registry} + "=";
+    const auto first = keys.lower_bound(prefix);
+    if (first == keys.end() || !first->starts_with(prefix)) {
+        // Nothing is kept about that registry's shape, so nothing can be said about its members.
+        return true;
+    }
+    return keys.contains(prefix + std::string{member});
 }
 
 std::int32_t size(const std::int32_t protocol, const std::string_view registry) {
