@@ -182,18 +182,14 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         return;
     }
     case Packet::ResourcePacksInfo: {
-        ByteWriter answer;
-        writeVarUInt(answer,
-                     2); // Downloading finished: there was nothing to download.
-        writeString(answer, "downloadingfinished");
-        send(Packet::ResourcePackClientResponse, answer.bytes());
+        // Downloading finished: there was nothing to download. Below 2168 the answer is the state's
+        // own number as a byte and a list of pack ids counted by a short; from 2168 it is the number
+        // one lower, as a varint, with the state's name behind it.
+        sendPackResponse(3, "downloadingfinished");
         return;
     }
     case Packet::ResourcePackStack: {
-        ByteWriter answer;
-        writeVarUInt(answer, 3); // The stack is settled.
-        writeString(answer, "resourcepackstackfinished");
-        send(Packet::ResourcePackClientResponse, answer.bytes());
+        sendPackResponse(4, "resourcepackstackfinished"); // The stack is settled.
         return;
     }
     case Packet::ModalFormRequest: {
@@ -216,24 +212,121 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         return;
     }
     case Packet::StartGame: {
-        // The two entity ids lead the packet, and the position follows the game type. A client that
-        // never reads them cannot say who it is when it moves.
-        static_cast<void>(readVarLong(reader));
+        // Read whole, to the last byte. It is the longest packet a server writes and the only one
+        // whose tail nothing else would notice: a field of the wrong width anywhere in the middle
+        // leaves the rest of it off by a few bytes, and the only way to see that is to run out of
+        // packet at the end, or to have some left over.
+        static_cast<void>(readVarLong(reader)); // The player's own entity id, twice over.
         runtimeEntityId_ = readVarULong(reader);
+        static_cast<void>(readVarInt(reader)); // What game they are playing.
+        x_ = readFloatLE(reader);
+        y_ = readFloatLE(reader);
+        z_ = readFloatLE(reader);
+        static_cast<void>(readFloatLE(reader)); // Where they are looking.
+        static_cast<void>(readFloatLE(reader));
+
+        // The world, which is most of the packet.
+        static_cast<void>(readLongLE(reader));  // The seed,
+        static_cast<void>(readShortLE(reader)); // which biome the spawn is in,
+        static_cast<void>(readString(reader));  // and its name if it has one.
+        for (int field = 0; field < 3; ++field) {
+            static_cast<void>(readVarInt(reader)); // Dimension, generator, and the world's game.
+        }
+        static_cast<void>(reader.readByte());   // Not hardcore,
+        static_cast<void>(readVarInt(reader));  // at some difficulty,
+        static_cast<void>(readVarInt(reader));  // with a spawn: x,
+        static_cast<void>(readVarUInt(reader)); // its height, which is the one unsigned coordinate,
+        static_cast<void>(readVarInt(reader));  // and z.
+        static_cast<void>(reader.readByte());   // Achievements,
+        static_cast<void>(readVarInt(reader));  // what kind of editor world it is,
+        static_cast<void>(reader.readByte());   // whether it was made in one,
+        static_cast<void>(reader.readByte());   // whether it was exported from one,
+        static_cast<void>(readVarInt(reader));  // where the day stops,
+        static_cast<void>(readVarUInt(reader)); // what education offers,
+        static_cast<void>(reader.readByte());   // whether they are on,
+        static_cast<void>(readString(reader));  // and under what product.
+        static_cast<void>(readFloatLE(reader)); // How hard it rains
+        static_cast<void>(readFloatLE(reader)); // and thunders.
+        for (int flag = 0; flag < 3; ++flag) {
+            static_cast<void>(reader.readByte()); // Locked content, multiplayer, and the local network.
+        }
+        static_cast<void>(readVarInt(reader)); // Who it is broadcast to, on both counts.
         static_cast<void>(readVarInt(reader));
-        ByteReader positions{reader.rest()};
-        const auto readFloat = [&positions] {
-            std::uint32_t raw = 0;
-            for (int shift = 0; shift < 32; shift += 8) {
-                raw |= static_cast<std::uint32_t>(positions.readByte()) << shift;
-            }
-            float value = 0.0F;
-            __builtin_memcpy(&value, &raw, sizeof(value));
-            return value;
-        };
-        x_ = readFloat();
-        y_ = readFloat();
-        z_ = readFloat();
+        static_cast<void>(reader.readByte()); // Commands,
+        static_cast<void>(reader.readByte()); // and whether packs are required.
+        const std::uint32_t rules = readVarUInt(reader);
+        if (rules != 0) {
+            problem("the server sent " + std::to_string(rules) + " gamerules, which this bot cannot read");
+            return;
+        }
+        const std::int32_t experiments = readIntLE(reader);
+        if (experiments != 0) {
+            problem("the server sent " + std::to_string(experiments) + " experiments, which this bot cannot read");
+            return;
+        }
+        for (int flag = 0; flag < 3; ++flag) {
+            static_cast<void>(reader.readByte()); // Experiments once toggled, a bonus chest, a map.
+        }
+        // The one field in the whole packet that is a byte in 2168 and a varint below it.
+        if (nativeShapes(options_.protocol)) {
+            static_cast<void>(reader.readByte());
+        } else {
+            static_cast<void>(readVarInt(reader));
+        }
+        static_cast<void>(readIntLE(reader)); // How far chunks tick.
+        for (int flag = 0; flag < 10; ++flag) {
+            static_cast<void>(reader.readByte()); // Ten things locked, templated, or turned off.
+        }
+        static_cast<void>(readString(reader)); // Which Minecraft this is,
+        static_cast<void>(readIntLE(reader));  // and how big the world may get,
+        static_cast<void>(readIntLE(reader));
+        static_cast<void>(reader.readByte());  // whether it is the nether,
+        static_cast<void>(readString(reader)); // and the education link, a name
+        static_cast<void>(readString(reader)); // and a uri.
+        if (reader.readByte() != 0) {
+            static_cast<void>(reader.readByte()); // Experimental gameplay, if it is forced at all.
+        }
+        static_cast<void>(reader.readByte()); // How restricted chat is,
+        static_cast<void>(reader.readByte()); // and whether anybody may touch anything.
+        if (options_.protocol >= 1001) {
+            static_cast<void>(readVarInt(reader)); // An editor connection policy, and what it drops,
+            static_cast<void>(reader.readByte());  // neither of which 975 and below know about.
+        }
+
+        static_cast<void>(readString(reader));  // The world's id,
+        static_cast<void>(readString(reader));  // its name,
+        static_cast<void>(readString(reader));  // the template it came from,
+        static_cast<void>(reader.readByte());   // whether it is a trial,
+        static_cast<void>(readVarInt(reader));  // how much movement it rewinds,
+        static_cast<void>(reader.readByte());   // who breaks blocks,
+        static_cast<void>(readLongLE(reader));  // what tick it is,
+        static_cast<void>(readVarInt(reader));  // the enchantment seed,
+        static_cast<void>(readVarUInt(reader)); // and no blocks of its own.
+        static_cast<void>(readString(reader));  // What correlates this session,
+        static_cast<void>(reader.readByte());   // who owns the inventories,
+        static_cast<void>(readString(reader));  // what engine is running,
+        skipTag(reader);                        // what properties a player has,
+        static_cast<void>(readLongLE(reader));  // the checksum of the block registry,
+        static_cast<void>(readUuid(reader));    // and the template's id.
+        static_cast<void>(reader.readByte());   // Who generates chunks,
+        static_cast<void>(reader.readByte());   // how block ids are numbered,
+        static_cast<void>(reader.readByte());   // and who plays the sounds.
+        if (options_.protocol >= 1001 && !nativeShapes(options_.protocol)) {
+            static_cast<void>(reader.readByte()); // Whether chat is logged, which only 1001 asks.
+        }
+        static_cast<void>(reader.readByte()); // No join info,
+        for (int field = 0; field < 4; ++field) {
+            static_cast<void>(readString(reader)); // and the four names of this server and world.
+        }
+
+        if (reader.failed()) {
+            problem("the world description ran off the end of the packet");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("the world description left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
         say("the world was described, spawning at " + std::to_string(x_) + ", " + std::to_string(y_) + ", " +
             std::to_string(z_));
         return;
@@ -286,12 +379,18 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
     case Packet::PlayerList: {
         // Who else is here. Read whole, skin and all: the fields after a skin only land where they
         // should if every one of its own did, so reaching the end of the packet is the test.
+        // Below 2168 the action is said once and in front, and what follows is all of that kind.
+        const bool wholePacketArriving = nativeShapes(options_.protocol) || reader.readByte() == 0;
         const std::uint32_t entries = readVarUInt(reader);
+        std::uint32_t added = 0;
         for (std::uint32_t index = 0; index < entries && !reader.failed(); ++index) {
-            const bool arriving = readVarUInt(reader) == 1;
-            const std::uint8_t action = reader.readByte();
-            if (arriving != (action == 0)) {
-                problem("a player list line says it is arriving and leaving at once");
+            bool arriving = wholePacketArriving;
+            if (nativeShapes(options_.protocol)) {
+                arriving = readVarUInt(reader) == 1;
+                const std::uint8_t action = reader.readByte();
+                if (arriving != (action == 0)) {
+                    problem("a player list line says it is arriving and leaving at once");
+                }
             }
             const std::string uuid = readUuid(reader);
             if (!arriving) {
@@ -304,17 +403,27 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             static_cast<void>(readString(reader)); // their xuid,
             static_cast<void>(readString(reader)); // and what console they chat from.
             static_cast<void>(readIntLE(reader));
-            skipSkin(reader);
+            skipSkin(reader, options_.protocol);
             static_cast<void>(reader.readByte()); // A teacher,
             static_cast<void>(reader.readByte()); // the host,
             static_cast<void>(reader.readByte()); // or somebody's second player on one console.
-            static_cast<void>(readIntLE(reader));
+            if (nativeShapes(options_.protocol)) {
+                static_cast<void>(readIntLE(reader));
+            }
             if (reader.failed()) {
                 problem("a player list line ran off the end of the packet");
                 break;
             }
+            ++added;
             listed_[uuid] = name;
             say("told about " + name + " in the player list");
+        }
+        // Below 2168 whether a skin is to be trusted is not part of the line: it is a run of
+        // booleans behind all of them, one each.
+        if (!nativeShapes(options_.protocol)) {
+            for (std::uint32_t index = 0; index < added && !reader.failed(); ++index) {
+                static_cast<void>(reader.readByte());
+            }
         }
         if (!reader.failed() && reader.remaining() != 0) {
             problem("a player list left " + std::to_string(reader.remaining()) + " bytes unread");
@@ -368,6 +477,63 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             seen_.erase(static_cast<std::uint64_t>(entityId));
             say("entity " + std::to_string(entityId) + " is gone");
         }
+        return;
+    }
+    case Packet::AvailableCommands: {
+        // What this client is allowed to type. Read whole: a Bedrock client parses a line against
+        // this list before it sends anything, so a name missing here is a command the player cannot
+        // run at all, and a field of the wrong width loses every name after it.
+        for (int list = 0; list < 5; ++list) {
+            // Enum values, subcommand words, suffixes, enums and subcommands: a server with none of
+            // them writes five empty lists, and a bot that meets one cannot read what follows.
+            const std::uint32_t count = readVarUInt(reader);
+            if (count != 0) {
+                problem("the command list carries " + std::to_string(count) + " of list " + std::to_string(list) +
+                        ", which this bot cannot read");
+                return;
+            }
+        }
+        const std::uint32_t count = readVarUInt(reader);
+        for (std::uint32_t index = 0; index < count && !reader.failed(); ++index) {
+            const std::string name = readString(reader);
+            static_cast<void>(readString(reader));  // What its help line says,
+            static_cast<void>(readShortLE(reader)); // its flags,
+            static_cast<void>(readString(reader));  // who may run it,
+            static_cast<void>(readIntLE(reader));   // which enum its aliases are,
+            const std::uint32_t subcommands = readVarUInt(reader);
+            for (std::uint32_t at = 0; at < subcommands && !reader.failed(); ++at) {
+                static_cast<void>(readIntLE(reader));
+            }
+            const std::uint32_t overloads = readVarUInt(reader);
+            for (std::uint32_t at = 0; at < overloads && !reader.failed(); ++at) {
+                static_cast<void>(reader.readByte()); // Whether it chains,
+                const std::uint32_t parameters = readVarUInt(reader);
+                for (std::uint32_t parameter = 0; parameter < parameters && !reader.failed(); ++parameter) {
+                    static_cast<void>(readString(reader)); // what the parameter is called,
+                    static_cast<void>(readIntLE(reader));  // what it is,
+                    static_cast<void>(reader.readByte());  // whether it may be left out,
+                    static_cast<void>(reader.readByte());  // and what else it carries.
+                }
+            }
+            if (!reader.failed()) {
+                offered_.insert(name);
+            }
+        }
+        static_cast<void>(readVarUInt(reader)); // No soft enums
+        static_cast<void>(readVarUInt(reader)); // and nothing constraining one.
+        if (reader.failed()) {
+            problem("the command list ran off the end of the packet");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("the command list left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        std::string named;
+        for (const std::string& command : offered_) {
+            named += (named.empty() ? "" : ", ") + command;
+        }
+        say("offered " + std::to_string(offered_.size()) + " command(s): " + named);
         return;
     }
     case Packet::LevelEvent: {
@@ -498,6 +664,18 @@ void BedrockBot::sendLogin() {
     writeVarUInt(body, static_cast<std::uint32_t>(blob.size()));
     body.writeBytes(blob.bytes());
     send(Packet::Login, body.bytes());
+}
+
+void BedrockBot::sendPackResponse(const std::uint8_t status, const std::string& name) {
+    ByteWriter answer;
+    if (nativeShapes(options_.protocol)) {
+        writeVarUInt(answer, static_cast<std::uint32_t>(status) - 1);
+        writeString(answer, name);
+    } else {
+        answer.writeByte(status);
+        writeShortLE(answer, 0); // No pack ids to name.
+    }
+    send(Packet::ResourcePackClientResponse, answer.bytes());
 }
 
 void BedrockBot::sendChat(const std::string& line) {

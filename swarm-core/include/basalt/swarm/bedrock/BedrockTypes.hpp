@@ -8,6 +8,12 @@
 
 namespace basalt::swarm::bedrock {
 
+/// The Bedrock protocol this bot claims by default. A server that speaks another answers with the
+/// number it wants instead of letting the bot in, and that is a thing worth testing too.
+inline constexpr int kBedrockProtocol = 2168;
+
+inline constexpr std::string_view kBedrockVersion = "1.26.40";
+
 /// Bedrock writes its fixed-width numbers little endian and its variable ones
 /// LEB128, which is the opposite of Java Edition on both counts. None of the
 /// readers a Java bot uses fit here, so these are their own.
@@ -153,6 +159,25 @@ inline void writeString(ByteWriter& writer, std::string_view value) {
     return text;
 }
 
+/// Protocol 2168 rewrote the skin, the player list and the two resource pack packets. A bot that
+/// claims anything older in the window reads and writes the shape underneath.
+[[nodiscard]] inline bool nativeShapes(const int protocol) { return protocol >= kBedrockProtocol; }
+
+/// A network NBT tag, skipped rather than read: a bot only needs to get past it. Bedrock writes its
+/// NBT little endian with varint lengths, and the only one a server sends here is empty.
+inline void skipTag(ByteReader& reader) {
+    const std::uint8_t kind = reader.readByte();
+    if (kind != 0x0a) {
+        return; // Not a compound, and nothing else is expected where this is called.
+    }
+    reader.skip(readVarUInt(reader)); // Its name, which is never given one.
+    while (!reader.failed() && reader.readByte() != 0x00) {
+        // A field this bot cannot read means the rest of the packet is unreadable too, and the
+        // caller finds that out when it runs off the end.
+        return;
+    }
+}
+
 /// An image inside a skin: its size, then the pixels, with no header at all.
 inline void skipImage(ByteReader& reader) {
     static_cast<void>(readIntLE(reader));
@@ -162,7 +187,49 @@ inline void skipImage(ByteReader& reader) {
 
 /// The skin a player list carries. Read in full rather than skipped: the fields
 /// after it only land in the right place if every one of these did.
-inline void skipSkin(ByteReader& reader) {
+inline void skipSkin(ByteReader& reader, const int protocol) {
+    if (!nativeShapes(protocol)) {
+        static_cast<void>(readString(reader)); // Skin id,
+        static_cast<void>(readString(reader)); // the PlayFab account,
+        static_cast<void>(readString(reader)); // and the geometry's name.
+        skipImage(reader);
+        const std::int32_t animations = readIntLE(reader);
+        for (std::int32_t index = 0; index < animations && !reader.failed(); ++index) {
+            skipImage(reader);
+            static_cast<void>(readVarUInt(reader));
+            static_cast<void>(readFloatLE(reader));
+            static_cast<void>(readVarUInt(reader));
+        }
+        skipImage(reader);                     // The cape,
+        static_cast<void>(readString(reader)); // the geometry,
+        static_cast<void>(readString(reader)); // what engine wrote it,
+        static_cast<void>(readString(reader)); // the animations,
+        static_cast<void>(readString(reader)); // the cape's id,
+        static_cast<void>(readString(reader)); // the id of the lot,
+        static_cast<void>(readString(reader)); // which arms,
+        static_cast<void>(readString(reader)); // and what colour.
+        const std::int32_t pieces = readIntLE(reader);
+        for (std::int32_t index = 0; index < pieces && !reader.failed(); ++index) {
+            for (int field = 0; field < 3; ++field) {
+                static_cast<void>(readString(reader));
+            }
+            static_cast<void>(reader.readByte());
+            static_cast<void>(readString(reader));
+        }
+        const std::int32_t tints = readIntLE(reader);
+        for (std::int32_t index = 0; index < tints && !reader.failed(); ++index) {
+            static_cast<void>(readString(reader));
+            const std::int32_t colours = readIntLE(reader);
+            for (std::int32_t colour = 0; colour < colours && !reader.failed(); ++colour) {
+                static_cast<void>(readString(reader));
+            }
+        }
+        for (int flag = 0; flag < 5; ++flag) {
+            static_cast<void>(reader.readByte());
+        }
+        return;
+    }
+
     static_cast<void>(readString(reader)); // Skin id,
     static_cast<void>(readString(reader)); // the PlayFab account behind it,
     static_cast<void>(readString(reader)); // and the json naming its geometry.
@@ -233,6 +300,7 @@ enum class Packet : std::uint16_t {
     RequestChunkRadius = 69,
     ChunkRadiusUpdated = 70,
     SetLocalPlayerAsInitialized = 113,
+    AvailableCommands = 76,
     PlayerList = 63,
     NetworkChunkPublisherUpdate = 121,
     NetworkSettings = 143,

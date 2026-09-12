@@ -8,24 +8,15 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace basalt::swarm::bedrock {
 
-/// The Bedrock protocol this bot claims. A server that speaks another answers
-/// with the number it wants instead of letting the bot in, and that is a thing
-/// worth testing too.
-inline constexpr int kBedrockProtocol = 2168;
-
-inline constexpr std::string_view kBedrockVersion = "1.26.40";
-
-/// One Bedrock bot: the RakNet session, the login, and the walk to the world.
-///
-/// It is a second implementation of the protocol on purpose, like the Java bot:
-/// every byte it writes is written against the specification and none of it is
-/// shared with the server it points at, so the two cannot agree on the same
-/// mistake.
+/// One Bedrock bot: the RakNet session, the login, and the walk to the world. A second
+/// implementation on purpose, like the Java bot: nothing is shared with the server it points at, so
+/// the two cannot agree on the same mistake.
 class BedrockBot {
 public:
     struct Options {
@@ -66,6 +57,10 @@ public:
 
     [[nodiscard]] const std::map<std::uint64_t, std::string>& seen() const noexcept { return seen_; }
 
+    /// Every command the server said this client may type. A Bedrock client will not send what is
+    /// not in here, so an empty set is a client that can run nothing.
+    [[nodiscard]] const std::set<std::string>& offered() const noexcept { return offered_; }
+
     /// The last value of every attribute the server sent for this bot itself.
     [[nodiscard]] const std::map<std::string, float>& attributes() const noexcept { return attributes_; }
 
@@ -77,6 +72,9 @@ private:
     [[nodiscard]] bool pump(std::int32_t millis);
     void handle(Packet packet, ByteReader& reader);
     void sendLogin();
+    /// What this client answers a resource pack question with, in the shape its protocol reads.
+    void sendPackResponse(std::uint8_t status, const std::string& name);
+
     void sendChat(const std::string& line);
     void sendCommand(const std::string& line);
     void sendAuthInput();
@@ -102,6 +100,7 @@ private:
     std::map<std::string, std::string> listed_;
     std::map<std::uint64_t, std::string> seen_;
     std::map<std::string, float> attributes_;
+    std::set<std::string> offered_;
 };
 
 } // namespace basalt::swarm::bedrock

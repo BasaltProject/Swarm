@@ -1,7 +1,7 @@
 #include <basalt/swarm/Bot.hpp>
-#include <basalt/swarm/bedrock/BedrockBot.hpp>
 #include <basalt/swarm/Protocols.hpp>
 #include <basalt/swarm/Spread.hpp>
+#include <basalt/swarm/bedrock/BedrockBot.hpp>
 
 #include <charconv>
 #include <chrono>
@@ -56,11 +56,22 @@ struct Arguments {
     /// is a different bot and not another profile of the same one.
     bool bedrock = false;
     std::int32_t stayMillis = 5000;
-    std::int32_t bedrockProtocol = bedrock::kBedrockProtocol;
+    /// Which Bedrock protocols the bots claim, dealt out one per bot in turn. More than one is how
+    /// a single run puts several versions on a server at the same time.
+    std::vector<std::int32_t> bedrockProtocols{bedrock::kBedrockProtocol};
     std::string chatLine;
     std::string commandLine;
     bool ok = true;
 };
+
+/// The protocols a run is speaking, for the line it prints before it starts.
+[[nodiscard]] std::string protocolList(const std::vector<std::int32_t>& protocols) {
+    std::string text;
+    for (const std::int32_t protocol : protocols) {
+        text += (text.empty() ? "" : ", ") + std::to_string(protocol);
+    }
+    return text;
+}
 
 [[nodiscard]] Arguments parse(const std::vector<std::string_view>& args) {
     Arguments parsed;
@@ -95,8 +106,8 @@ struct Arguments {
                 // A bare number this tool has no ids for is still worth claiming: it is how a
                 // server's answer to an unknown version gets tested.
                 parsed.profile = protocols::pretend(*number);
-                say("No packet ids for protocol " + std::to_string(*number) +
-                    ": past the handshake this speaks " + std::string{protocols::newest().label} + ".");
+                say("No packet ids for protocol " + std::to_string(*number) + ": past the handshake this speaks " +
+                    std::string{protocols::newest().label} + ".");
             } else {
                 say("Unknown version: " + std::string{next});
                 std::string known;
@@ -122,7 +133,18 @@ struct Arguments {
             parsed.chatLine = std::string{next};
             i += 2;
         } else if (flag == "--bedrock-protocol") {
-            parsed.bedrockProtocol = numberOf<std::int32_t>(next).value_or(parsed.bedrockProtocol);
+            std::vector<std::int32_t> asked;
+            for (std::size_t at = 0; at <= next.size();) {
+                const std::size_t comma = std::min(next.find(',', at), next.size());
+                const std::optional<std::int32_t> number = numberOf<std::int32_t>(next.substr(at, comma - at));
+                if (number.has_value()) {
+                    asked.push_back(*number);
+                }
+                at = comma + 1;
+            }
+            if (!asked.empty()) {
+                parsed.bedrockProtocols = std::move(asked);
+            }
             i += 2;
         } else if (flag == "--run") {
             parsed.commandLine = std::string{next};
@@ -150,14 +172,15 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const std::string layout =
-        parsed.spread > 0.0 ? std::to_string(static_cast<std::int64_t>(parsed.spread)) + " blocks apart" : "on the spawn";
+    const std::string layout = parsed.spread > 0.0
+                                   ? std::to_string(static_cast<std::int64_t>(parsed.spread)) + " blocks apart"
+                                   : "on the spawn";
     say("Target: " + parsed.host + ":" + std::to_string(parsed.port) + " | Bots: " + std::to_string(parsed.count) +
-        " | Delay: " + std::to_string(parsed.delayMillis) + "ms | Physics: " +
-        (parsed.physicsEnabled ? "true" : "false") + " | Layout: " + layout + " | Speaking: " +
-        (parsed.bedrock ? "Bedrock " + std::string{bedrock::kBedrockVersion} + " (" +
-                              std::to_string(parsed.bedrockProtocol) + ")"
-                        : std::string{parsed.profile.label} + " (" + std::to_string(parsed.profile.protocol) + ")"));
+        " | Delay: " + std::to_string(parsed.delayMillis) +
+        "ms | Physics: " + (parsed.physicsEnabled ? "true" : "false") + " | Layout: " + layout + " | Speaking: " +
+        (parsed.bedrock
+             ? "Bedrock " + std::string{bedrock::kBedrockVersion} + " (" + protocolList(parsed.bedrockProtocols) + ")"
+             : std::string{parsed.profile.label} + " (" + std::to_string(parsed.profile.protocol) + ")"));
 
     if (parsed.bedrock) {
         std::vector<std::jthread> bedrockBots;
@@ -168,7 +191,8 @@ int main(int argc, char** argv) {
             options.host = parsed.host;
             options.port = parsed.port;
             options.stayMillis = parsed.stayMillis;
-            options.protocol = parsed.bedrockProtocol;
+            options.protocol =
+                parsed.bedrockProtocols[static_cast<std::size_t>(id - 1) % parsed.bedrockProtocols.size()];
             options.chatLine = parsed.chatLine;
             options.commandLine = parsed.commandLine;
             options.say = say;
