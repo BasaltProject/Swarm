@@ -60,6 +60,15 @@ public:
     /// what was missing.
     [[nodiscard]] const std::map<std::uint16_t, std::int32_t>& counts() const noexcept { return counts_; }
 
+    /// Everybody else the server said is here, and everybody else it drew. A server that presents
+    /// nobody is a server nobody can play on together, which is worth reporting on its own.
+    [[nodiscard]] const std::map<std::string, std::string>& listed() const noexcept { return listed_; }
+
+    [[nodiscard]] const std::map<std::uint64_t, std::string>& seen() const noexcept { return seen_; }
+
+    /// The last value of every attribute the server sent for this bot itself.
+    [[nodiscard]] const std::map<std::string, float>& attributes() const noexcept { return attributes_; }
+
 private:
     void say(const std::string& line) const;
     void problem(const std::string& line);
@@ -89,6 +98,10 @@ private:
     float y_ = 0.0F;
     float z_ = 0.0F;
     std::uint64_t tick_ = 0;
+    /// Who the server listed, by uuid, and who it actually drew, by entity id.
+    std::map<std::string, std::string> listed_;
+    std::map<std::uint64_t, std::string> seen_;
+    std::map<std::string, float> attributes_;
 };
 
 } // namespace basalt::swarm::bedrock

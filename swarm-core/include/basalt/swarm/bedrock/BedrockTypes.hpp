@@ -92,6 +92,16 @@ inline void writeString(ByteWriter& writer, std::string_view value) {
     return static_cast<std::int32_t>((zigzag >> 1U) ^ (~(zigzag & 1U) + 1U));
 }
 
+[[nodiscard]] inline float readFloatLE(ByteReader& reader) {
+    std::uint32_t raw = 0;
+    for (int shift = 0; shift < 32; shift += 8) {
+        raw |= static_cast<std::uint32_t>(reader.readByte()) << shift;
+    }
+    float value = 0.0F;
+    __builtin_memcpy(&value, &raw, sizeof(value));
+    return value;
+}
+
 [[nodiscard]] inline std::uint16_t readShortLE(ByteReader& reader) {
     const std::uint16_t low = reader.readByte();
     const std::uint16_t high = reader.readByte();
@@ -111,6 +121,89 @@ inline void writeString(ByteWriter& writer, std::string_view value) {
     return text;
 }
 
+[[nodiscard]] inline std::int32_t readIntLE(ByteReader& reader) {
+    std::uint32_t raw = 0;
+    for (int shift = 0; shift < 32; shift += 8) {
+        raw |= static_cast<std::uint32_t>(reader.readByte()) << shift;
+    }
+    return static_cast<std::int32_t>(raw);
+}
+
+[[nodiscard]] inline std::int64_t readLongLE(ByteReader& reader) {
+    std::uint64_t raw = 0;
+    for (int shift = 0; shift < 64; shift += 8) {
+        raw |= static_cast<std::uint64_t>(reader.readByte()) << shift;
+    }
+    return static_cast<std::int64_t>(raw);
+}
+
+/// A uuid, as Bedrock writes one: two little-endian longs, most significant
+/// first. Printed the way anybody would recognise it.
+[[nodiscard]] inline std::string readUuid(ByteReader& reader) {
+    const auto high = static_cast<std::uint64_t>(readLongLE(reader));
+    const auto low = static_cast<std::uint64_t>(readLongLE(reader));
+    static constexpr char kDigits[] = "0123456789abcdef";
+    std::string text;
+    for (int nibble = 15; nibble >= 0; --nibble) {
+        text += kDigits[(high >> (nibble * 4)) & 0xfU];
+    }
+    for (int nibble = 15; nibble >= 0; --nibble) {
+        text += kDigits[(low >> (nibble * 4)) & 0xfU];
+    }
+    return text;
+}
+
+/// An image inside a skin: its size, then the pixels, with no header at all.
+inline void skipImage(ByteReader& reader) {
+    static_cast<void>(readIntLE(reader));
+    static_cast<void>(readIntLE(reader));
+    reader.skip(readVarUInt(reader));
+}
+
+/// The skin a player list carries. Read in full rather than skipped: the fields
+/// after it only land in the right place if every one of these did.
+inline void skipSkin(ByteReader& reader) {
+    static_cast<void>(readString(reader)); // Skin id,
+    static_cast<void>(readString(reader)); // the PlayFab account behind it,
+    static_cast<void>(readString(reader)); // and the json naming its geometry.
+    skipImage(reader);
+    const std::uint32_t animations = readVarUInt(reader);
+    for (std::uint32_t index = 0; index < animations && !reader.failed(); ++index) {
+        skipImage(reader);
+        static_cast<void>(readVarUInt(reader)); // What the texture is of,
+        static_cast<void>(readFloatLE(reader)); // how many frames,
+        static_cast<void>(readVarUInt(reader)); // and what it expresses.
+    }
+    skipImage(reader);                     // The cape,
+    static_cast<void>(readString(reader)); // the geometry itself,
+    static_cast<void>(readString(reader)); // what engine wrote it,
+    static_cast<void>(readString(reader)); // the animations,
+    static_cast<void>(readString(reader)); // the cape's id
+    static_cast<void>(readString(reader)); // and the id of the lot.
+    static_cast<void>(reader.readByte());  // Which arms,
+    static_cast<void>(readIntLE(reader));  // and what colour.
+    const std::uint32_t pieces = readVarUInt(reader);
+    for (std::uint32_t index = 0; index < pieces && !reader.failed(); ++index) {
+        static_cast<void>(readString(reader));
+        static_cast<void>(readIntLE(reader));
+        static_cast<void>(readUuid(reader));
+        static_cast<void>(reader.readByte());
+        static_cast<void>(readString(reader));
+    }
+    const std::uint32_t tints = readVarUInt(reader);
+    for (std::uint32_t index = 0; index < tints && !reader.failed(); ++index) {
+        static_cast<void>(readString(reader));
+        for (int colour = 0; colour < 4; ++colour) {
+            static_cast<void>(readIntLE(reader));
+        }
+    }
+    for (int flag = 0; flag < 5; ++flag) {
+        static_cast<void>(reader.readByte());
+    }
+    static_cast<void>(readString(reader)); // Whether it is trusted, spelled out,
+    static_cast<void>(readString(reader)); // and the hash of the profile it came from.
+}
+
 /// The packet ids a bot needs. Every live Bedrock protocol numbers them the
 /// same way.
 enum class Packet : std::uint16_t {
@@ -119,11 +212,20 @@ enum class Packet : std::uint16_t {
     ServerToClientHandshake = 3,
     ClientToServerHandshake = 4,
     Disconnect = 5,
+    SetTime = 10,
     Text = 9,
     ResourcePacksInfo = 6,
     ResourcePackStack = 7,
     ResourcePackClientResponse = 8,
     StartGame = 11,
+    LevelEvent = 25,
+    AddPlayer = 12,
+    RemoveEntity = 14,
+    MoveEntityAbsolute = 18,
+    UpdateAttributes = 29,
+    MovePlayer = 19,
+    SetPlayerGameType = 62,
+    SetTitle = 88,
     CommandRequest = 77,
     ModalFormRequest = 100,
     ModalFormResponse = 101,
@@ -131,6 +233,7 @@ enum class Packet : std::uint16_t {
     RequestChunkRadius = 69,
     ChunkRadiusUpdated = 70,
     SetLocalPlayerAsInitialized = 113,
+    PlayerList = 63,
     NetworkChunkPublisherUpdate = 121,
     NetworkSettings = 143,
     PlayerAuthInput = 144,

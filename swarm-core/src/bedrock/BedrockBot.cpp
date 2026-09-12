@@ -260,6 +260,198 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         }
         return;
     }
+    case Packet::SetTitle: {
+        // What a client draws over the world: a title, its subtitle, or the line over the hotbar.
+        const std::int32_t type = readVarInt(reader);
+        const std::string text = readString(reader);
+        if (!reader.failed() && !text.empty()) {
+            say("a title of kind " + std::to_string(type) + ": " + text);
+        }
+        return;
+    }
+    case Packet::MovePlayer: {
+        // Where the server says this client is, which for a teleport is not where it thought.
+        static_cast<void>(readVarULong(reader));
+        const float x = readFloatLE(reader);
+        const float y = readFloatLE(reader);
+        const float z = readFloatLE(reader);
+        if (!reader.failed()) {
+            x_ = x;
+            y_ = y;
+            z_ = z;
+            say("moved by the server to " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
+        }
+        return;
+    }
+    case Packet::PlayerList: {
+        // Who else is here. Read whole, skin and all: the fields after a skin only land where they
+        // should if every one of its own did, so reaching the end of the packet is the test.
+        const std::uint32_t entries = readVarUInt(reader);
+        for (std::uint32_t index = 0; index < entries && !reader.failed(); ++index) {
+            const bool arriving = readVarUInt(reader) == 1;
+            const std::uint8_t action = reader.readByte();
+            if (arriving != (action == 0)) {
+                problem("a player list line says it is arriving and leaving at once");
+            }
+            const std::string uuid = readUuid(reader);
+            if (!arriving) {
+                listed_.erase(uuid);
+                say("told that " + uuid + " is gone");
+                continue;
+            }
+            static_cast<void>(readVarLong(reader)); // Their entity id,
+            const std::string name = readString(reader);
+            static_cast<void>(readString(reader)); // their xuid,
+            static_cast<void>(readString(reader)); // and what console they chat from.
+            static_cast<void>(readIntLE(reader));
+            skipSkin(reader);
+            static_cast<void>(reader.readByte()); // A teacher,
+            static_cast<void>(reader.readByte()); // the host,
+            static_cast<void>(reader.readByte()); // or somebody's second player on one console.
+            static_cast<void>(readIntLE(reader));
+            if (reader.failed()) {
+                problem("a player list line ran off the end of the packet");
+                break;
+            }
+            listed_[uuid] = name;
+            say("told about " + name + " in the player list");
+        }
+        if (!reader.failed() && reader.remaining() != 0) {
+            problem("a player list left " + std::to_string(reader.remaining()) + " bytes unread");
+        }
+        return;
+    }
+    case Packet::AddPlayer: {
+        const std::string uuid = readUuid(reader);
+        const std::string name = readString(reader);
+        const std::uint64_t runtime = readVarULong(reader);
+        static_cast<void>(readString(reader)); // What console they chat from.
+        const float x = readFloatLE(reader);
+        const float y = readFloatLE(reader);
+        const float z = readFloatLE(reader);
+        if (reader.failed()) {
+            problem("a player was added with a body that ran out");
+            return;
+        }
+        if (runtime == runtimeEntityId_) {
+            problem("the server added " + name + " with this bot's own entity id");
+        }
+        if (!listed_.contains(uuid)) {
+            problem("the server drew " + name + " without listing them first");
+        }
+        seen_[runtime] = name;
+        say("can see " + name + " at " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
+        return;
+    }
+    case Packet::MoveEntityAbsolute: {
+        const std::uint64_t runtime = readVarULong(reader);
+        static_cast<void>(reader.readByte()); // Whether they are on the ground, teleported or forced.
+        const float x = readFloatLE(reader);
+        const float y = readFloatLE(reader);
+        const float z = readFloatLE(reader);
+        static_cast<void>(reader.readByte()); // The three turns, a byte each.
+        static_cast<void>(reader.readByte());
+        static_cast<void>(reader.readByte());
+        if (reader.failed()) {
+            return;
+        }
+        if (!seen_.contains(runtime)) {
+            problem("the server moved entity " + std::to_string(runtime) + ", which it never drew");
+            return;
+        }
+        say(seen_[runtime] + " moved to " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
+        return;
+    }
+    case Packet::RemoveEntity: {
+        const std::int64_t entityId = readVarLong(reader);
+        if (!reader.failed()) {
+            seen_.erase(static_cast<std::uint64_t>(entityId));
+            say("entity " + std::to_string(entityId) + " is gone");
+        }
+        return;
+    }
+    case Packet::LevelEvent: {
+        // Something that happens to the world rather than to anybody. Only the weather is read: the
+        // rest are effects a bot has nothing to draw with.
+        const std::int32_t type = readVarInt(reader);
+        static_cast<void>(readFloatLE(reader));
+        static_cast<void>(readFloatLE(reader));
+        static_cast<void>(readFloatLE(reader));
+        const std::int32_t data = readVarInt(reader);
+        if (reader.failed()) {
+            return;
+        }
+        switch (type) {
+        case 3001:
+            say("it is raining, at " + std::to_string(data));
+            break;
+        case 3002:
+            say("it is thundering, at " + std::to_string(data));
+            break;
+        case 3003:
+            say("it stopped raining");
+            break;
+        case 3004:
+            say("it stopped thundering");
+            break;
+        default:
+            break;
+        }
+        return;
+    }
+    case Packet::UpdateAttributes: {
+        // What the HUD draws from. Bedrock is told the range of every number as well as the number,
+        // so a value outside its own range is a server bug the client would draw wrong.
+        const std::uint64_t runtime = readVarULong(reader);
+        const std::uint32_t count = readVarUInt(reader);
+        for (std::uint32_t index = 0; index < count && !reader.failed(); ++index) {
+            const float minimum = readFloatLE(reader);
+            const float maximum = readFloatLE(reader);
+            const float value = readFloatLE(reader);
+            static_cast<void>(readFloatLE(reader)); // The range it started with,
+            static_cast<void>(readFloatLE(reader));
+            static_cast<void>(readFloatLE(reader)); // and what it was to begin with.
+            const std::string name = readString(reader);
+            const std::uint32_t modifiers = readVarUInt(reader);
+            for (std::uint32_t at = 0; at < modifiers && !reader.failed(); ++at) {
+                static_cast<void>(readString(reader));
+                static_cast<void>(readString(reader));
+                static_cast<void>(readFloatLE(reader));
+                static_cast<void>(readIntLE(reader));
+                static_cast<void>(readIntLE(reader));
+                static_cast<void>(reader.readByte());
+            }
+            if (reader.failed()) {
+                problem("an attribute ran off the end of the packet");
+                break;
+            }
+            if (value < minimum || value > maximum) {
+                problem(name + " is " + std::to_string(value) + ", outside its own range");
+            }
+            if (runtime == runtimeEntityId_) {
+                attributes_[name] = value;
+            }
+            say(name + " is " + std::to_string(value));
+        }
+        if (!reader.failed()) {
+            static_cast<void>(readVarULong(reader)); // Which tick it is.
+        }
+        return;
+    }
+    case Packet::SetPlayerGameType: {
+        const std::int32_t mode = readVarInt(reader);
+        if (!reader.failed()) {
+            say("the game mode is now " + std::to_string(mode));
+        }
+        return;
+    }
+    case Packet::SetTime: {
+        const std::int32_t time = readVarInt(reader);
+        if (!reader.failed()) {
+            say("the world says the time is " + std::to_string(time));
+        }
+        return;
+    }
     case Packet::Disconnect:
         refused_ = true;
         say("the server sent us away");

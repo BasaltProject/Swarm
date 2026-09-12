@@ -30,10 +30,16 @@ void ensureStarted() {
 }
 
 void closeHandle(const std::int64_t handle) { closesocket(static_cast<SOCKET>(handle)); }
+
+/// How many bytes a socket call is told it has. Winsock counts in int and everybody else in
+/// size_t, and the compiler objects to whichever one is not the platform's own.
+using SocketSize = int;
 #else
 void ensureStarted() {}
 
 void closeHandle(const std::int64_t handle) { ::close(static_cast<int>(handle)); }
+
+using SocketSize = std::size_t;
 #endif
 
 [[nodiscard]] std::string lastError() {
@@ -114,7 +120,7 @@ std::expected<void, SocketError> UdpClient::send(const std::span<const std::uint
         return std::unexpected(SocketError{.message = "socket closed"});
     }
     const auto sent = ::send(static_cast<int>(handle_), reinterpret_cast<const char*>(bytes.data()),
-                             static_cast<int>(bytes.size()), 0);
+                             static_cast<SocketSize>(bytes.size()), 0);
     if (sent < 0) {
         return std::unexpected(SocketError{.message = lastError()});
     }
@@ -129,8 +135,8 @@ std::expected<std::optional<std::size_t>, SocketError> UdpClient::receive(const 
     if (!waitReadable(handle_, millis)) {
         return std::optional<std::size_t>{};
     }
-    const auto received =
-        ::recv(static_cast<int>(handle_), reinterpret_cast<char*>(into.data()), static_cast<int>(into.size()), 0);
+    const auto received = ::recv(static_cast<int>(handle_), reinterpret_cast<char*>(into.data()),
+                                 static_cast<SocketSize>(into.size()), 0);
     if (received < 0) {
         return std::unexpected(SocketError{.message = lastError()});
     }
