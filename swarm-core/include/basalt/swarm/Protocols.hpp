@@ -45,6 +45,10 @@ struct ProtocolProfile {
         /// for that version, and then a bot counts no entities rather than counting the wrong
         /// packet: the id moves almost every version, and guessing it reads a chunk as a spawn.
         std::int32_t clientboundAddEntity = -1;
+        /// Where the server says something to everyone. -1 where this tool has not been told the
+        /// number, and then a bot hears nothing rather than reading another packet as a sentence.
+        /// The numbers come from minecraft-data, which is nobody's server.
+        std::int32_t clientboundSystemChat = -1;
     };
 
     /// What a player looks like in the entity registry of the versions this bot names ids for.

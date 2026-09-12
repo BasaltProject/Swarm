@@ -57,6 +57,9 @@ public:
 
     [[nodiscard]] const std::map<std::uint64_t, std::string>& seen() const noexcept { return seen_; }
 
+    /// Whether this bot was shown a death screen at any point.
+    [[nodiscard]] bool died() const noexcept { return died_; }
+
     /// Every command the server said this client may type. A Bedrock client will not send what is
     /// not in here, so an empty set is a client that can run nothing.
     [[nodiscard]] const std::set<std::string>& offered() const noexcept { return offered_; }
@@ -101,6 +104,7 @@ private:
     std::map<std::uint64_t, std::string> seen_;
     std::map<std::string, float> attributes_;
     std::set<std::string> offered_;
+    bool died_ = false;
 };
 
 } // namespace basalt::swarm::bedrock

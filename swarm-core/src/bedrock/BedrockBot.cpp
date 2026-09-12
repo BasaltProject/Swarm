@@ -479,6 +479,68 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         }
         return;
     }
+    case Packet::ChangeDimension: {
+        // Another world, which for this edition is another dimension. Read whole: the loading
+        // screen id at the end is new enough that getting it wrong is easy to miss.
+        const std::int32_t dimension = readVarInt(reader);
+        const float x = readFloatLE(reader);
+        const float y = readFloatLE(reader);
+        const float z = readFloatLE(reader);
+        static_cast<void>(reader.readByte()); // Whether it is a respawn,
+        static_cast<void>(reader.readByte()); // and whether a loading screen was named.
+        if (reader.failed()) {
+            problem("a dimension change arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a dimension change left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        x_ = x;
+        y_ = y;
+        z_ = z;
+        say("moved to dimension " + std::to_string(dimension) + " at " + std::to_string(x) + ", " + std::to_string(y) +
+            ", " + std::to_string(z));
+        return;
+    }
+    case Packet::DeathInfo: {
+        // What the death screen says. Bedrock puts that screen up by itself once health reaches
+        // zero, so this only carries the sentence.
+        const std::string cause = readString(reader);
+        const std::uint32_t lines = readVarUInt(reader);
+        if (reader.failed()) {
+            problem("a death arrived with a body that ran out");
+            return;
+        }
+        if (lines != 0) {
+            problem("a death carries " + std::to_string(lines) + " extra lines, which this bot cannot read");
+            return;
+        }
+        died_ = true;
+        say("died: " + cause);
+        // What a player does when they press the button, which is the only way back.
+        ByteWriter answer;
+        writeFloatLE(answer, x_);
+        writeFloatLE(answer, y_);
+        writeFloatLE(answer, z_);
+        answer.writeByte(2); // The client is ready.
+        writeVarULong(answer, runtimeEntityId_);
+        send(Packet::Respawn, answer.bytes());
+        return;
+    }
+    case Packet::Respawn: {
+        static_cast<void>(readFloatLE(reader));
+        const float y = readFloatLE(reader);
+        static_cast<void>(readFloatLE(reader));
+        const std::uint8_t state = reader.readByte();
+        if (reader.failed()) {
+            return;
+        }
+        if (state == 1) {
+            say("respawned at height " + std::to_string(y));
+        }
+        return;
+    }
     case Packet::AvailableCommands: {
         // What this client is allowed to type. Read whole: a Bedrock client parses a line against
         // this list before it sends anything, so a name missing here is a command the player cannot

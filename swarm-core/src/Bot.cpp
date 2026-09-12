@@ -30,8 +30,7 @@ constexpr double kAirSpeed = 0.02;
 /// falls out of the world for the rest of the run.
 constexpr double kFloor = 63.0;
 
-[[nodiscard]] std::vector<std::uint8_t> withVarInt(const std::int32_t value,
-                                                   const std::span<const std::uint8_t> body) {
+[[nodiscard]] std::vector<std::uint8_t> withVarInt(const std::int32_t value, const std::span<const std::uint8_t> body) {
     ByteWriter framed;
     framed.writeVarInt(value);
     framed.writeBytes(body);
@@ -60,8 +59,8 @@ bool Bot::sendPacket(const std::int32_t packetId, const ByteWriter& body) {
         if (static_cast<std::int32_t>(payload.size()) >= compressionThreshold_) {
             const std::expected<std::vector<std::uint8_t>, zlib::ZlibError> compressed = zlib::compress(payload);
             if (!compressed.has_value()) {
-                say("Bot " + std::to_string(options_.id) + " could not compress a packet: " +
-                    compressed.error().message);
+                say("Bot " + std::to_string(options_.id) +
+                    " could not compress a packet: " + compressed.error().message);
                 return false;
             }
             framed = withVarInt(static_cast<std::int32_t>(payload.size()), *compressed);
@@ -241,6 +240,20 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
         answer.writeBytes(body.rest());
         return sendPacket(profile.play.serverboundKeepAlive, answer);
     }
+    if (profile.play.clientboundSystemChat >= 0 && packetId == profile.play.clientboundSystemChat) {
+        // What the server says to everyone: chat, a death, somebody arriving. Since 1.20.3 the
+        // sentence travels as a tag, so it is read as one rather than as json.
+        const std::string words = nbt::text(body);
+        const bool overlay = body.readByte() != 0;
+        if (body.failed() || words.empty()) {
+            static_cast<void>(body.rest());
+            return true;
+        }
+        heard_.push_back(words);
+        say(name + (overlay ? " sees over the hotbar: " : " heard: ") + words);
+        static_cast<void>(body.rest());
+        return true;
+    }
     if (profile.play.clientboundAddEntity >= 0 && packetId == profile.play.clientboundAddEntity) {
         // Who else is here, as this client is told about them. A player entity is what another
         // player looks like from inside the game, whichever edition they arrived on.
@@ -297,8 +310,7 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
         }
         return true;
     }
-    if (const std::int32_t commands = checks_.packetId("minecraft:commands");
-        commands >= 0 && packetId == commands) {
+    if (const std::int32_t commands = checks_.packetId("minecraft:commands"); commands >= 0 && packetId == commands) {
         checks_.commands(body);
         return true;
     }
@@ -372,8 +384,7 @@ bool Bot::drainFrames() {
         }
         std::vector<std::uint8_t> frame(incoming_.begin() + static_cast<std::ptrdiff_t>(headerSize),
                                         incoming_.begin() + static_cast<std::ptrdiff_t>(headerSize) + length);
-        incoming_.erase(incoming_.begin(),
-                        incoming_.begin() + static_cast<std::ptrdiff_t>(headerSize) + length);
+        incoming_.erase(incoming_.begin(), incoming_.begin() + static_cast<std::ptrdiff_t>(headerSize) + length);
 
         std::vector<std::uint8_t> inflated;
         std::span<const std::uint8_t> payload{frame};

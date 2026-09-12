@@ -9,8 +9,8 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
-#include <set>
 #include <random>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -82,6 +82,8 @@ private:
     Checks checks_;
     /// The entity ids of the other players this bot has been shown, so each is said once.
     std::set<std::int32_t> entitiesSeen_;
+    /// Every line the server said to this bot, in order.
+    std::vector<std::string> heard_;
     ProtocolState state_ = ProtocolState::Login;
     std::int32_t compressionThreshold_ = -1;
     bool running_ = true;

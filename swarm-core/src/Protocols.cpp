@@ -12,8 +12,7 @@ using Configuration = ProtocolProfile::ConfigurationIds;
 
 /// Take a version and change only what this one moved, which is how the table stays readable:
 /// most versions differ from their neighbour in three numbers.
-[[nodiscard]] ProtocolProfile like(const ProtocolProfile& base, const std::int32_t protocol,
-                                   const std::string& label) {
+[[nodiscard]] ProtocolProfile like(const ProtocolProfile& base, const std::int32_t protocol, const std::string& label) {
     ProtocolProfile copy = base;
     copy.protocol = protocol;
     copy.label = label;
@@ -30,7 +29,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
 [[nodiscard]] std::vector<ProtocolProfile> build() {
     // 26.1 and 26.2 number their packets identically: the jump between them moved no packet at
     // all, so what is written here for one holds for the other.
-    const ProtocolProfile v26_2{.protocol = 776, .label = "26.2", .play = Play{.clientboundAddEntity = 1}};
+    const ProtocolProfile v26_2{
+        .protocol = 776, .label = "26.2", .play = Play{.clientboundAddEntity = 1, .clientboundSystemChat = 121}};
     const ProtocolProfile v26_1 = like(v26_2, 775, "26.1");
 
     // 1.21.11 moved the play ids down by one, and nothing a bot sends changed shape.
@@ -40,7 +40,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                                 .clientboundPlayerPosition = 70,
                                                 .clientboundDisconnect = 32,
                                                 .serverboundKeepAlive = 27,
-                                                .serverboundMovePosRot = 30}};
+                                                .serverboundMovePosRot = 30,
+                                                .clientboundSystemChat = 119}};
     const ProtocolProfile v1_21_10 = like(v1_21_11, 773, "1.21.10");
 
     // Before 1.21.9's five new debug packets, so the play ids sit lower again.
@@ -50,7 +51,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                                .clientboundPlayerPosition = 65,
                                                .clientboundDisconnect = 28,
                                                .serverboundKeepAlive = 27,
-                                               .serverboundMovePosRot = 30}};
+                                               .serverboundMovePosRot = 30,
+                                               .clientboundSystemChat = 114}};
     const ProtocolProfile v1_21_6 = like(v1_21_8, 771, "1.21.6");
 
     // 1.21.6 added the dialog packets, so before it the serverbound play ids are one lower.
@@ -60,7 +62,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                                .clientboundPlayerPosition = 65,
                                                .clientboundDisconnect = 28,
                                                .serverboundKeepAlive = 26,
-                                               .serverboundMovePosRot = 29}};
+                                               .serverboundMovePosRot = 29,
+                                               .clientboundSystemChat = 114}};
 
     // 1.21.5 added the test-instance packets, so before it the play ids sit one lower again.
     const ProtocolProfile v1_21_4{.protocol = 769,
@@ -69,7 +72,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                                .clientboundPlayerPosition = 66,
                                                .clientboundDisconnect = 29,
                                                .serverboundKeepAlive = 26,
-                                               .serverboundMovePosRot = 29}};
+                                               .serverboundMovePosRot = 29,
+                                               .clientboundSystemChat = 115}};
 
     // 1.21.2 and 1.21.3 share their numbering with 1.21.4.
     const ProtocolProfile v1_21_3 = like(v1_21_4, 768, "1.21.3");
@@ -82,7 +86,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                        .clientboundPlayerPosition = 64,
                                        .clientboundDisconnect = 29,
                                        .serverboundKeepAlive = 24,
-                                       .serverboundMovePosRot = 27}};
+                                       .serverboundMovePosRot = 27,
+                                       .clientboundSystemChat = 108}};
     v1_21.settingsHaveParticleStatus = false;
     v1_21.positionStartsWithTeleportId = false;
 
@@ -104,7 +109,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                          .clientboundPlayerPosition = 62,
                                          .clientboundDisconnect = 27,
                                          .serverboundKeepAlive = 21,
-                                         .serverboundMovePosRot = 24}};
+                                         .serverboundMovePosRot = 24,
+                                         .clientboundSystemChat = 105}};
     v1_20_4.settingsHaveParticleStatus = false;
     v1_20_4.positionStartsWithTeleportId = false;
 
@@ -124,7 +130,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                          .clientboundPlayerPosition = 60,
                                          .clientboundDisconnect = 26,
                                          .serverboundKeepAlive = 18,
-                                         .serverboundMovePosRot = 21}};
+                                         .serverboundMovePosRot = 21,
+                                         .clientboundSystemChat = 100}};
     v1_20_1.hasConfigurationPhase = false;
     v1_20_1.settingsHaveParticleStatus = false;
     v1_20_1.positionStartsWithTeleportId = false;
@@ -281,11 +288,10 @@ using Configuration = ProtocolProfile::ConfigurationIds;
     v1_8.positionIsAcknowledged = false;
     v1_8.settingsHaveMainHand = false;
 
-    return {v26_2,   v26_1,   v1_21_11, v1_21_10, v1_21_8, v1_21_6, v1_21_5, v1_21_4, v1_21_3, v1_21,
-            v1_20_6, v1_20_4, v1_20_2,  v1_20_1,  v1_19_4, v1_19_3, v1_19_2, v1_19,   v1_18_2, v1_18_1,
-            v1_17_1, v1_17,   v1_16_5,  v1_16_3,  v1_16_2, v1_16_1, v1_16,   v1_15_2, v1_15_1, v1_15,
-            v1_14_4, v1_14_3, v1_14_1,  v1_14,    v1_13_2, v1_13_1, v1_13,   v1_12_2, v1_12_1, v1_12,
-            v1_11_2, v1_11,   v1_10_2,  v1_9_4,   v1_9_2,  v1_9,    v1_8};
+    return {v26_2,   v26_1,   v1_21_11, v1_21_10, v1_21_8, v1_21_6, v1_21_5, v1_21_4, v1_21_3, v1_21, v1_20_6, v1_20_4,
+            v1_20_2, v1_20_1, v1_19_4,  v1_19_3,  v1_19_2, v1_19,   v1_18_2, v1_18_1, v1_17_1, v1_17, v1_16_5, v1_16_3,
+            v1_16_2, v1_16_1, v1_16,    v1_15_2,  v1_15_1, v1_15,   v1_14_4, v1_14_3, v1_14_1, v1_14, v1_13_2, v1_13_1,
+            v1_13,   v1_12_2, v1_12_1,  v1_12,    v1_11_2, v1_11,   v1_10_2, v1_9_4,  v1_9_2,  v1_9,  v1_8};
 }
 
 } // namespace

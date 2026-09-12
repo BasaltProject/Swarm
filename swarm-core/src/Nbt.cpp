@@ -1,6 +1,7 @@
 #include <basalt/swarm/Bytes.hpp>
 #include <basalt/swarm/Nbt.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -122,7 +123,79 @@ void walkCompound(ByteReader& reader, const std::function<void(std::string_view)
     }
 }
 
+/// Collects the words of a component compound, descending into the lists that hold more of them.
+void readText(ByteReader& reader, std::string& into, const std::int32_t depth) {
+    if (depth > kMaxDepth) {
+        reader.skip(reader.remaining() + 1);
+        return;
+    }
+    while (!reader.failed()) {
+        const std::int32_t entry = reader.readByte();
+        if (entry == kEnd) {
+            return;
+        }
+        const std::string name = readName(reader);
+        if (entry == kString && (name == "text" || name == "translate")) {
+            const auto length = static_cast<std::size_t>(static_cast<std::uint16_t>(reader.readShort()));
+            for (std::size_t index = 0; index < length && !reader.failed(); ++index) {
+                into += static_cast<char>(reader.readByte());
+            }
+            continue;
+        }
+        // What a line is made of: the pieces after it, and what was filled into a translation.
+        if (entry == kList && (name == "extra" || name == "with")) {
+            const std::int32_t elements = reader.readByte();
+            const std::int32_t count = reader.readInt();
+            for (std::int32_t index = 0; index < count && !reader.failed(); ++index) {
+                if (elements == kCompound) {
+                    if (!into.empty()) {
+                        into += " ";
+                    }
+                    readText(reader, into, depth + 1);
+                    continue;
+                }
+                if (elements == kString) {
+                    const auto length = static_cast<std::size_t>(static_cast<std::uint16_t>(reader.readShort()));
+                    if (!into.empty()) {
+                        into += " ";
+                    }
+                    for (std::size_t at = 0; at < length && !reader.failed(); ++at) {
+                        into += static_cast<char>(reader.readByte());
+                    }
+                    continue;
+                }
+                if (elements != kEnd) {
+                    skipPayload(reader, elements, depth + 1);
+                }
+            }
+            continue;
+        }
+        skipPayload(reader, entry, depth + 1);
+    }
+}
+
 } // namespace
+
+std::string text(ByteReader& reader) {
+    const std::int32_t type = reader.readByte();
+    if (type != kCompound) {
+        if (type == kString) {
+            std::string plain;
+            const auto length = static_cast<std::size_t>(static_cast<std::uint16_t>(reader.readShort()));
+            for (std::size_t index = 0; index < length && !reader.failed(); ++index) {
+                plain += static_cast<char>(reader.readByte());
+            }
+            return plain;
+        }
+        if (type != kEnd) {
+            skipPayload(reader, type, 0);
+        }
+        return {};
+    }
+    std::string words;
+    readText(reader, words, 0);
+    return words;
+}
 
 void walkKeys(ByteReader& reader, const std::function<void(std::string_view path)>& onKey) {
     const std::int32_t type = reader.readByte();
