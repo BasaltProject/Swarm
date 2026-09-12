@@ -56,7 +56,9 @@ struct Arguments {
     /// is a different bot and not another profile of the same one.
     bool bedrock = false;
     std::int32_t stayMillis = 5000;
+    std::int32_t bedrockProtocol = bedrock::kBedrockProtocol;
     std::string chatLine;
+    std::string commandLine;
     bool ok = true;
 };
 
@@ -119,6 +121,12 @@ struct Arguments {
         } else if (flag == "--say") {
             parsed.chatLine = std::string{next};
             i += 2;
+        } else if (flag == "--bedrock-protocol") {
+            parsed.bedrockProtocol = numberOf<std::int32_t>(next).value_or(parsed.bedrockProtocol);
+            i += 2;
+        } else if (flag == "--run") {
+            parsed.commandLine = std::string{next};
+            i += 2;
         } else if (flag == "--stay") {
             parsed.stayMillis = numberOf<std::int32_t>(next).value_or(parsed.stayMillis);
             i += 2;
@@ -148,7 +156,7 @@ int main(int argc, char** argv) {
         " | Delay: " + std::to_string(parsed.delayMillis) + "ms | Physics: " +
         (parsed.physicsEnabled ? "true" : "false") + " | Layout: " + layout + " | Speaking: " +
         (parsed.bedrock ? "Bedrock " + std::string{bedrock::kBedrockVersion} + " (" +
-                              std::to_string(bedrock::kBedrockProtocol) + ")"
+                              std::to_string(parsed.bedrockProtocol) + ")"
                         : std::string{parsed.profile.label} + " (" + std::to_string(parsed.profile.protocol) + ")"));
 
     if (parsed.bedrock) {
@@ -160,7 +168,9 @@ int main(int argc, char** argv) {
             options.host = parsed.host;
             options.port = parsed.port;
             options.stayMillis = parsed.stayMillis;
+            options.protocol = parsed.bedrockProtocol;
             options.chatLine = parsed.chatLine;
+            options.commandLine = parsed.commandLine;
             options.say = say;
             bedrockBots.emplace_back(
                 [moved = std::move(options)]() mutable { bedrock::BedrockBot{std::move(moved)}.run(); });

@@ -38,6 +38,8 @@ public:
         std::int32_t stayMillis = 5000;
         /// What the bot says in chat once it is in, or nothing to stay quiet.
         std::string chatLine;
+        /// A command the bot runs once it is in, without its slash, or nothing to run none.
+        std::string commandLine;
         std::function<void(const std::string&)> say;
     };
 
@@ -67,6 +69,7 @@ private:
     void handle(Packet packet, ByteReader& reader);
     void sendLogin();
     void sendChat(const std::string& line);
+    void sendCommand(const std::string& line);
     void sendAuthInput();
     void onHandshake(ByteReader& reader);
 
@@ -80,6 +83,7 @@ private:
     bool refused_ = false;
     std::int32_t problems_ = 0;
     std::map<std::uint16_t, std::int32_t> counts_;
+    std::int32_t advertisedProtocol_ = 0;
     std::uint64_t runtimeEntityId_ = 0;
     float x_ = 0.0F;
     float y_ = 0.0F;

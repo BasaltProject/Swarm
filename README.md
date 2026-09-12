@@ -71,6 +71,8 @@ You can run the generated native binary directly from your terminal. Swarm provi
 - `--version`, `--protocol <version>` (default: `26.2`): Which client version the bots claim to be. Takes a name (`26.1`) or a protocol number (`775`). A number this tool has no packet ids for is still sent, so a server's answer to a version it does not know can be tested; past the handshake those bots speak 26.2.
 - `--bedrock` (default: disabled): The bots arrive as Bedrock clients instead of Java ones: RakNet, the key exchange and the encrypted stream, all the way to spawning. The default port moves to `19132` with the flag, and `--version`, `--physics` and `--spread` do not apply to them yet.
 - `--stay <ms>` (default: `5000`): How long a Bedrock bot stays once it has spawned.
+- `--run <command>` (default: none): A command a Bedrock bot runs once it is in, without its slash. What the server answers arrives as chat, so `--run list` is a round trip through the server's own dispatcher.
+- `--bedrock-protocol <number>` (default: the one this build speaks): Which Bedrock protocol the bots claim. A server that turns them away for it is doing its job; one that turns away the very protocol it advertises in its own server list is not, and that is reported as a problem.
 - `--spread <blocks>` (default: disabled): Spreads the bots over a square grid centred on the spawn, that many blocks between neighbours. Without it every bot stands on the spawn, which only ever loads one area of the world. Each bot claims its cell again after every position sync the server sends.
 
 ### Examples

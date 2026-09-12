@@ -162,13 +162,23 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         const std::int32_t status = reader.readInt();
         if (status == 0) {
             say("the login was accepted");
-        } else if (status == 3) {
+            return;
+        }
+        if (status == 3) {
             spawned_ = true;
             say("spawned");
-        } else {
-            refused_ = true;
-            problem("the server answered the login with status " + std::to_string(status));
+            return;
         }
+        refused_ = true;
+        const std::string told = status == 1 ? "this client is too old" : "this server is too old";
+        // Being turned away is only a problem when the server had just said, in its own server
+        // list, that it speaks exactly what this bot claimed.
+        if (advertisedProtocol_ == options_.protocol) {
+            problem("the server advertises protocol " + std::to_string(advertisedProtocol_) +
+                    " and then turned that same protocol away: " + told);
+            return;
+        }
+        say("turned away: " + told);
         return;
     }
     case Packet::ResourcePacksInfo: {
@@ -184,6 +194,25 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         writeVarUInt(answer, 3); // The stack is settled.
         writeString(answer, "resourcepackstackfinished");
         send(Packet::ResourcePackClientResponse, answer.bytes());
+        return;
+    }
+    case Packet::ModalFormRequest: {
+        // A form is what a Bedrock client gets where a Java one gets a window of items. A bot
+        // answers the first button, which is what says the whole path works: plugin, server,
+        // client, and back.
+        const std::uint32_t formId = readVarUInt(reader);
+        const std::string form = readString(reader);
+        if (reader.failed()) {
+            problem("a form arrived that could not be read");
+            return;
+        }
+        say("a form arrived: " + form);
+        ByteWriter answer;
+        writeVarUInt(answer, formId);
+        answer.writeByte(1); // There is an answer.
+        writeString(answer, "0\n");
+        answer.writeByte(0); // Not dismissed.
+        send(Packet::ModalFormResponse, answer.bytes());
         return;
     }
     case Packet::StartGame: {
@@ -325,6 +354,24 @@ void BedrockBot::sendAuthInput() {
     send(Packet::PlayerAuthInput, body.bytes());
 }
 
+void BedrockBot::sendCommand(const std::string& line) {
+    ByteWriter body;
+    writeString(body, "/" + line);
+    // Where the client says the command came from: its own name for the kind of console, who is
+    // asking, the request it belongs to, and which entity that is.
+    writeString(body, "player");
+    for (int index = 0; index < 16; ++index) {
+        body.writeByte(0);
+    }
+    writeString(body, "");
+    for (int index = 0; index < 8; ++index) {
+        body.writeByte(0);
+    }
+    body.writeByte(0);     // Not the server talking to itself.
+    writeString(body, ""); // The version of the command syntax, which a server reads from its own tree.
+    send(Packet::CommandRequest, body.bytes());
+}
+
 void BedrockBot::onHandshake(ByteReader& reader) {
     const std::string token = readString(reader);
     const auto parts = decodeJwt(token);
@@ -378,6 +425,7 @@ void BedrockBot::run() {
         problem("the server did not answer a ping");
         return;
     }
+    advertisedProtocol_ = advertisement->protocol;
     say("server list: " + advertisement->motd + " (" + advertisement->version + ", protocol " +
         std::to_string(advertisement->protocol) + ", " + std::to_string(advertisement->online) + "/" +
         std::to_string(advertisement->max) + ")");
@@ -410,6 +458,10 @@ void BedrockBot::run() {
     if (!spawned_ && !refused_) {
         problem("never reached the world");
     }
+    if (refused_ && !spawned_) {
+        rak_.disconnect();
+        return;
+    }
     if (spawned_) {
         // A client that is told to spawn and given no columns stands in the void:
         // the chunks are what a player would notice missing, so they are what a bot
@@ -433,6 +485,9 @@ void BedrockBot::run() {
     }
     if (spawned_ && !options_.chatLine.empty()) {
         sendChat(options_.chatLine);
+    }
+    if (spawned_ && !options_.commandLine.empty()) {
+        sendCommand(options_.commandLine);
     }
     if (spawned_ && options_.stayMillis > 0) {
         const std::int64_t leaveAt = nowMillis() + options_.stayMillis;
