@@ -57,6 +57,24 @@ public:
 
     [[nodiscard]] const std::map<std::uint64_t, std::string>& seen() const noexcept { return seen_; }
 
+    /// How many sounds the server played for this bot.
+    [[nodiscard]] std::int32_t sounds() const noexcept { return sounds_; }
+
+    /// How many particles the server drew for this bot.
+    [[nodiscard]] std::int32_t particles() const noexcept { return particles_; }
+
+    /// How many mob effects the server started, changed or took away.
+    [[nodiscard]] std::int32_t effects() const noexcept { return effects_; }
+
+    /// How many times the server said this bot, or somebody beside it, had been hit.
+    [[nodiscard]] std::int32_t hits() const noexcept { return hits_; }
+
+    /// How many single blocks the server said had changed.
+    [[nodiscard]] std::int32_t blockChanges() const noexcept { return blockChanges_; }
+
+    /// How many columns arrived with any blocks in them at all, as opposed to holes.
+    [[nodiscard]] std::int32_t columnsWithBlocks() const noexcept { return columnsWithBlocks_; }
+
     /// Whether this bot was shown a death screen at any point.
     [[nodiscard]] bool died() const noexcept { return died_; }
 
@@ -105,6 +123,12 @@ private:
     std::map<std::string, float> attributes_;
     std::set<std::string> offered_;
     bool died_ = false;
+    std::int32_t columnsWithBlocks_ = 0;
+    std::int32_t blockChanges_ = 0;
+    std::int32_t sounds_ = 0;
+    std::int32_t particles_ = 0;
+    std::int32_t effects_ = 0;
+    std::int32_t hits_ = 0;
 };
 
 } // namespace basalt::swarm::bedrock

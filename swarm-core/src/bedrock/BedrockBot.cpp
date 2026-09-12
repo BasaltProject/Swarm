@@ -479,6 +479,218 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         }
         return;
     }
+    case Packet::PlaySound: {
+        // A sound, under the name Bedrock knows it by. The place travels as eighths of a block.
+        const std::string name = readString(reader);
+        const std::int32_t x = readVarInt(reader);
+        static_cast<void>(readVarUInt(reader));
+        static_cast<void>(readVarInt(reader));
+        static_cast<void>(readFloatLE(reader)); // How loud,
+        static_cast<void>(readFloatLE(reader)); // and how high.
+        if (nativeShapes(options_.protocol)) {
+            static_cast<void>(readVarUInt(reader)); // How many times it loops.
+        }
+        if (options_.protocol >= 975) {
+            static_cast<void>(reader.readByte()); // Whether the server named a sound of its own.
+        }
+        if (reader.failed()) {
+            problem("a sound arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a sound left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        ++sounds_;
+        say("heard the sound " + name + " around " + std::to_string(x / 8));
+        return;
+    }
+    case Packet::MobEffect: {
+        // An effect starting, changing or ending. Read to the last byte: this packet grew twice in
+        // the window this bot speaks and both times at the end.
+        static_cast<void>(readVarULong(reader)); // Whose it is.
+        const std::uint8_t event = reader.readByte();
+        const std::int32_t id = readVarInt(reader);
+        const std::int32_t amplifier = readVarInt(reader);
+        static_cast<void>(reader.readByte()); // Whether it draws its own swirls.
+        const std::int32_t ticks = readVarInt(reader);
+        static_cast<void>(readVarULong(reader)); // Which tick it started on.
+        static_cast<void>(reader.readByte());    // Whether it came from a beacon rather than a bottle.
+        if (reader.failed()) {
+            problem("an effect arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("an effect left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        ++effects_;
+        say("effect " + std::to_string(id) + " level " + std::to_string(amplifier + 1) + " for " +
+            std::to_string(ticks) + " tick(s), event " + std::to_string(static_cast<std::int32_t>(event)));
+        return;
+    }
+    case Packet::SetEntityData: {
+        // Metadata for one entity. Read field by field, because a shape read wrong here is a shape
+        // read wrong in every packet that carries metadata.
+        static_cast<void>(readVarULong(reader));
+        const std::uint32_t fields = readVarUInt(reader);
+        std::int16_t air = -1;
+        for (std::uint32_t at = 0; at < fields && !reader.failed(); ++at) {
+            const std::uint32_t id = readVarUInt(reader);
+            const std::uint32_t format = readVarUInt(reader);
+            if (nativeShapes(options_.protocol)) {
+                // Since 2168 the format goes out twice, and a client refuses the two disagreeing.
+                if (static_cast<std::uint32_t>(reader.readByte()) != format) {
+                    problem("a metadata field named its format twice and said two different things");
+                    return;
+                }
+            }
+            switch (format) {
+            case 0:
+                static_cast<void>(reader.readByte());
+                break;
+            case 1: {
+                const auto value = static_cast<std::int16_t>(readShortLE(reader));
+                if (id == 7) {
+                    air = value;
+                }
+                break;
+            }
+            case 2:
+                static_cast<void>(readVarInt(reader));
+                break;
+            case 3:
+                static_cast<void>(readFloatLE(reader));
+                break;
+            case 4:
+                static_cast<void>(readString(reader));
+                break;
+            case 7:
+                static_cast<void>(readVarLong(reader));
+                break;
+            default:
+                problem("a metadata field arrived in a format this bot cannot read: " + std::to_string(format));
+                return;
+            }
+        }
+        static_cast<void>(readVarUInt(reader)); // Entity properties, of which this server sends none.
+        static_cast<void>(readVarUInt(reader));
+        static_cast<void>(readVarULong(reader)); // Which tick it belongs to.
+        if (reader.failed()) {
+            problem("metadata arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("metadata left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        if (air >= 0) {
+            say("air is " + std::to_string(air));
+        }
+        return;
+    }
+    case Packet::EntityEvent: {
+        // What an entity is doing that the client draws itself: the flash of a hit, the fall of a
+        // death. Grew a trailing optional position at 975.
+        static_cast<void>(readVarULong(reader));
+        const std::uint8_t event = reader.readByte();
+        static_cast<void>(readVarInt(reader));
+        if (options_.protocol >= 975) {
+            static_cast<void>(reader.readByte()); // Whether a position of its own follows.
+        }
+        if (reader.failed()) {
+            problem("an entity event arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("an entity event left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        ++hits_;
+        say("entity event " + std::to_string(static_cast<std::int32_t>(event)));
+        return;
+    }
+    case Packet::SetEntityMotion: {
+        // Being thrown, which is what a hit does to whoever took it.
+        static_cast<void>(readVarULong(reader));
+        const float x = readFloatLE(reader);
+        const float y = readFloatLE(reader);
+        const float z = readFloatLE(reader);
+        static_cast<void>(readVarULong(reader)); // Which tick it belongs to.
+        if (reader.failed()) {
+            problem("a motion arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a motion left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        say("thrown by " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
+        return;
+    }
+    case Packet::SpawnParticleEffect: {
+        // A particle, under the name Bedrock knows it by. Read to the last byte: a shape that grew
+        // without us noticing is exactly what this bot is for.
+        static_cast<void>(reader.readByte()); // Which dimension it belongs to.
+        static_cast<void>(readVarLong(reader)); // Which entity, or -1 for none.
+        const float x = readFloatLE(reader);
+        static_cast<void>(readFloatLE(reader));
+        static_cast<void>(readFloatLE(reader));
+        const std::string name = readString(reader);
+        static_cast<void>(reader.readByte()); // Whether variables of its own follow.
+        if (reader.failed()) {
+            problem("a particle arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a particle left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        ++particles_;
+        say("saw the particle " + name + " around " + std::to_string(static_cast<std::int32_t>(x)));
+        return;
+    }
+    case Packet::UpdateBlock: {
+        // One block that changed where this client is already looking.
+        const std::int32_t x = readVarInt(reader);
+        // The height travels as an unsigned varint of the signed number, so it comes back the size
+        // of a machine word when it is below zero and has to be read as what it was.
+        const auto y = static_cast<std::int32_t>(readVarUInt(reader));
+        const std::int32_t z = readVarInt(reader);
+        const std::uint32_t block = readVarUInt(reader);
+        static_cast<void>(readVarUInt(reader)); // What the client should do about it,
+        static_cast<void>(readVarUInt(reader)); // and on which layer.
+        if (reader.failed()) {
+            problem("a block change arrived with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a block change left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        ++blockChanges_;
+        say("a block changed at " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) +
+            " to id " + std::to_string(block));
+        return;
+    }
+    case Packet::LevelChunk: {
+        // How much world arrived. A column with no subchunks is a hole the client draws as nothing,
+        // which is what this server sent before it knew the block palette.
+        static_cast<void>(readVarInt(reader)); // Which column,
+        static_cast<void>(readVarInt(reader));
+        static_cast<void>(readVarInt(reader)); // in which dimension,
+        const std::uint32_t subChunks = readVarUInt(reader);
+        if (reader.failed()) {
+            return;
+        }
+        if (subChunks > 0) {
+            ++columnsWithBlocks_;
+            if (columnsWithBlocks_ == 1) {
+                say("the first column with blocks has " + std::to_string(subChunks) + " subchunk(s)");
+            }
+        }
+        return;
+    }
     case Packet::ChangeDimension: {
         // Another world, which for this edition is another dimension. Read whole: the loading
         // screen id at the end is new enough that getting it wrong is easy to miss.
@@ -935,6 +1147,8 @@ void BedrockBot::run() {
                 nextStep = nowMillis() + 100;
             }
         }
+        say("left with " + std::to_string(columnsWithBlocks_) + " column(s) of the world drawn, of " +
+            std::to_string(counts_[static_cast<std::uint16_t>(Packet::LevelChunk)]) + " sent");
     }
     rak_.disconnect();
 }
