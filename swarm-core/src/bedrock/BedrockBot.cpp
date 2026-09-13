@@ -750,6 +750,25 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         say("creative menu: " + std::to_string(offered) + " item(s) in " + std::to_string(groups) + " group(s)");
         return;
     }
+    case Packet::BlockEvent: {
+        // What a block asked to be done with it: a lid, a note, a piston.
+        const std::int32_t x = readVarInt(reader);
+        const std::int32_t y = static_cast<std::int32_t>(readVarUInt(reader));
+        const std::int32_t z = readVarInt(reader);
+        const std::int32_t b0 = readVarInt(reader);
+        const std::int32_t b1 = readVarInt(reader);
+        if (reader.failed()) {
+            problem("a block event ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a block event left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        say("the block at " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + " says " +
+            std::to_string(b0) + " and " + std::to_string(b1));
+        return;
+    }
     case Packet::ContainerOpen: {
         const std::int32_t containerId = static_cast<std::int8_t>(reader.readByte());
         const std::int32_t type = static_cast<std::int8_t>(reader.readByte());
@@ -1133,9 +1152,9 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         // Something that happens to the world rather than to anybody. Only the weather is read: the
         // rest are effects a bot has nothing to draw with.
         const std::int32_t type = readVarInt(reader);
-        static_cast<void>(readFloatLE(reader));
-        static_cast<void>(readFloatLE(reader));
-        static_cast<void>(readFloatLE(reader));
+        const float x = readFloatLE(reader);
+        const float y = readFloatLE(reader);
+        const float z = readFloatLE(reader);
         const std::int32_t data = readVarInt(reader);
         if (reader.failed()) {
             return;
@@ -1154,6 +1173,10 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             say("it stopped thundering");
             break;
         default:
+            // Everything else is an effect a bot has nothing to draw with, so it says what it was
+            // told rather than drawing it: that is what a test of the translation needs.
+            say("effect " + std::to_string(type) + " at " + std::to_string(x) + ", " + std::to_string(y) + ", " +
+                std::to_string(z) + " with " + std::to_string(data));
             break;
         }
         return;

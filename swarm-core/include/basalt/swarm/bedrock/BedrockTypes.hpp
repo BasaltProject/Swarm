@@ -309,6 +309,7 @@ enum class Packet : std::uint16_t {
     SetEntityMotion = 40,
     SetEntityData = 39,
     ItemComponent = 162,
+    BlockEvent = 26,
     ContainerOpen = 46,
     ContainerClose = 47,
     InventoryContent = 49,
