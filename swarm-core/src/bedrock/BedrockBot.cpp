@@ -769,6 +769,23 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             std::to_string(b0) + " and " + std::to_string(b1));
         return;
     }
+    case Packet::ContainerSetData: {
+        // One of the numbers a window draws its own machinery from: a furnace's fire and arrow.
+        const std::int32_t containerId = static_cast<std::int8_t>(reader.readByte());
+        const std::int32_t property = readVarInt(reader);
+        const std::int32_t value = readVarInt(reader);
+        if (reader.failed()) {
+            problem("a window's number ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a window's number left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        say("window " + std::to_string(containerId) + " says its " + std::to_string(property) + " is " +
+            std::to_string(value));
+        return;
+    }
     case Packet::ContainerOpen: {
         const std::int32_t containerId = static_cast<std::int8_t>(reader.readByte());
         const std::int32_t type = static_cast<std::int8_t>(reader.readByte());
@@ -1321,8 +1338,12 @@ void BedrockBot::sendAuthInput() {
     const bool swap =
         (!options_.swapSlots.empty() || !options_.stashSlots.empty() || !options_.takeSlots.empty()) && !swapSent_;
     // Which windows the two ends are in: the carried 36, or whatever block is open.
-    const std::int32_t swapFromContainer = options_.takeSlots.empty() ? 12 : 7;
-    const std::int32_t swapInto = options_.stashSlots.empty() ? 12 : 7;
+    // A block's window is the 7 unless it is a cooker, which gives each of its three slots a
+    // container of its own: --from and --into say which.
+    const std::int32_t swapFromContainer =
+        options_.takeSlots.empty() ? 12 : (options_.fromContainer > 0 ? options_.fromContainer : 7);
+    const std::int32_t swapInto =
+        options_.stashSlots.empty() ? 12 : (options_.intoContainer > 0 ? options_.intoContainer : 7);
     const std::array<std::int32_t, 3> at = pointOf(dig ? options_.digAt : options_.putAt);
     const std::string& asked = !options_.stashSlots.empty()  ? options_.stashSlots
                                : !options_.takeSlots.empty() ? options_.takeSlots

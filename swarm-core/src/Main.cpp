@@ -66,6 +66,8 @@ struct Arguments {
     std::string swapSlots;
     std::string stashSlots;
     std::string takeSlots;
+    std::int32_t intoContainer = 0;
+    std::int32_t fromContainer = 0;
     bool sneaking = false;
     bool ok = true;
 };
@@ -127,6 +129,12 @@ struct Arguments {
                 parsed.ok = false;
                 return parsed;
             }
+            i += 2;
+        } else if (flag == "--into") {
+            parsed.intoContainer = numberOf<std::int32_t>(next).value_or(0);
+            i += 2;
+        } else if (flag == "--from") {
+            parsed.fromContainer = numberOf<std::int32_t>(next).value_or(0);
             i += 2;
         } else if (flag == "--sneak") {
             parsed.sneaking = true;
@@ -229,6 +237,8 @@ int main(int argc, char** argv) {
             options.stashSlots = parsed.stashSlots;
             options.takeSlots = parsed.takeSlots;
             options.sneaking = parsed.sneaking;
+            options.intoContainer = parsed.intoContainer;
+            options.fromContainer = parsed.fromContainer;
             options.say = say;
             bedrockBots.emplace_back(
                 [moved = std::move(options)]() mutable { bedrock::BedrockBot{std::move(moved)}.run(); });

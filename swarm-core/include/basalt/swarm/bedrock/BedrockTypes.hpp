@@ -313,6 +313,7 @@ enum class Packet : std::uint16_t {
     ContainerOpen = 46,
     ContainerClose = 47,
     InventoryContent = 49,
+    ContainerSetData = 51,
     ItemStackResponse = 148,
     CreativeContent = 145,
     Respawn = 45,

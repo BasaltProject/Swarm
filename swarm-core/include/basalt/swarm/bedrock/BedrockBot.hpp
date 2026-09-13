@@ -42,6 +42,10 @@ public:
         std::string stashSlots;
         /// The other way round: a,b,n takes from the open block's slot a into carried slot b.
         std::string takeSlots;
+        /// Which window the two ends of a --stash or a --take are in, when it is not the block's
+        /// own 7: a cooker numbers its three slots as three containers.
+        std::int32_t intoContainer = 0;
+        std::int32_t fromContainer = 0;
         /// Whether this bot crouches, which is what makes a click place against a block instead of
         /// using it.
         bool sneaking = false;
