@@ -63,6 +63,10 @@ struct Arguments {
     std::string commandLine;
     std::string digAt;
     std::string putAt;
+    std::string swapSlots;
+    std::string stashSlots;
+    std::string takeSlots;
+    bool sneaking = false;
     bool ok = true;
 };
 
@@ -124,6 +128,9 @@ struct Arguments {
                 return parsed;
             }
             i += 2;
+        } else if (flag == "--sneak") {
+            parsed.sneaking = true;
+            i++;
         } else if (flag == "--bedrock") {
             parsed.bedrock = true;
             // Nobody writing --bedrock means the Java port, so the default moves with the flag.
@@ -154,6 +161,15 @@ struct Arguments {
         } else if (flag == "--put") {
             parsed.putAt = std::string{next};
             i += 2;
+        } else if (flag == "--swap") {
+            parsed.swapSlots = std::string{next};
+            i += 2;
+        } else if (flag == "--stash") {
+            parsed.stashSlots = std::string{next};
+            i += 2;
+        } else if (flag == "--take") {
+            parsed.takeSlots = std::string{next};
+            i += 2;
         } else if (flag == "--run") {
             parsed.commandLine = std::string{next};
             i += 2;
@@ -164,7 +180,11 @@ struct Arguments {
             parsed.spread = doubleOf(next).value_or(parsed.spread);
             i += 2;
         } else {
-            i++;
+            // A flag nobody reads is worse than one nobody wrote: a typo in a switch silently
+            // tested the default instead of what was asked for, twice, before this said so.
+            say("Unknown option: " + std::string{flag});
+            parsed.ok = false;
+            return parsed;
         }
     }
     return parsed;
@@ -205,6 +225,10 @@ int main(int argc, char** argv) {
             options.commandLine = parsed.commandLine;
             options.digAt = parsed.digAt;
             options.putAt = parsed.putAt;
+            options.swapSlots = parsed.swapSlots;
+            options.stashSlots = parsed.stashSlots;
+            options.takeSlots = parsed.takeSlots;
+            options.sneaking = parsed.sneaking;
             options.say = say;
             bedrockBots.emplace_back(
                 [moved = std::move(options)]() mutable { bedrock::BedrockBot{std::move(moved)}.run(); });

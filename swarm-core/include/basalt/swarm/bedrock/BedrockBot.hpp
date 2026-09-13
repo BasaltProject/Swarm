@@ -35,6 +35,16 @@ public:
         std::string digAt;
         /// A block to click with what is in hand, as x,y,z, or nothing to click none.
         std::string putAt;
+        /// Two slots of the carried 36 to trade places, as a,b, or a,b,n to carry n of them
+        /// through the cursor. Nothing moves none.
+        std::string swapSlots;
+        /// The same, but the second slot is in the block whose window is open: a,b,n.
+        std::string stashSlots;
+        /// The other way round: a,b,n takes from the open block's slot a into carried slot b.
+        std::string takeSlots;
+        /// Whether this bot crouches, which is what makes a click place against a block instead of
+        /// using it.
+        bool sneaking = false;
         std::function<void(const std::string&)> say;
     };
 
@@ -131,6 +141,11 @@ private:
     /// The one block action or click still to send, which goes out with the next input.
     bool digSent_ = false;
     bool putSent_ = false;
+    bool swapSent_ = false;
+    /// The window this bot has open, or -1 when it has none.
+    std::int32_t openContainer_ = -1;
+    /// Which request number the next one gets. A client counts its own and the answer names it.
+    std::int32_t requestId_ = 0;
     /// Who the server listed, by uuid, and who it actually drew, by entity id.
     std::map<std::string, std::string> listed_;
     std::map<std::uint64_t, std::string> seen_;
@@ -143,6 +158,7 @@ private:
     std::int32_t particles_ = 0;
     std::int32_t effects_ = 0;
     std::int32_t hits_ = 0;
+    std::set<std::int32_t> unread_;
     std::int32_t itemNames_ = 0;
     std::int32_t carried_ = 0;
 };

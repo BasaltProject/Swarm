@@ -27,7 +27,13 @@ struct Stack {
     std::int32_t data = 0;
 };
 
-[[nodiscard]] Stack readItem(ByteReader& reader) {
+[[nodiscard]] Stack readWindowItem(ByteReader& reader, int protocol);
+
+/// One stack in a hand. From 2168 it is the same shape a window carries.
+[[nodiscard]] Stack readItem(ByteReader& reader, const int protocol) {
+    if (protocol >= 2168) {
+        return readWindowItem(reader, protocol);
+    }
     const std::int32_t id = readVarInt(reader);
     if (id == 0) {
         return {};
@@ -45,20 +51,23 @@ struct Stack {
     return {id, count, data};
 }
 
-/// One stack as a window carries it. Below 1001 it is the same shape an entity's hand uses; from
-/// 1001 the id is a short and an empty stack still says all of itself.
+/// One stack as a window carries it. Below 1001 it is the shape an entity's hand used to use; from
+/// 1001 the id is a short and an empty stack still says all of itself, and 2168 dropped the number
+/// that said which kind of id followed.
 [[nodiscard]] Stack readWindowItem(ByteReader& reader, const int protocol) {
     if (protocol < 1001) {
-        return readItem(reader);
+        return readItem(reader, protocol);
     }
     const auto id = static_cast<std::int32_t>(static_cast<std::int16_t>(readShortLE(reader)));
     const auto count = static_cast<std::int32_t>(readShortLE(reader));
     const auto data = static_cast<std::int32_t>(readVarUInt(reader));
     if (reader.readByte() != 0) {
-        static_cast<void>(readVarUInt(reader)); // which of the three kinds of id it is,
-        static_cast<void>(readVarInt(reader));  // and which one of its kind.
+        if (protocol < 2168) {
+            static_cast<void>(readVarUInt(reader)); // which of the three kinds of id it is,
+        }
+        static_cast<void>(readVarInt(reader)); // and which one of its kind.
     }
-    static_cast<void>(readVarInt(reader)); // Which block it places.
+    static_cast<void>(readVarUInt(reader)); // Which block it places.
     const std::uint32_t extra = readVarUInt(reader);
     for (std::uint32_t at = 0; at < extra && !reader.failed(); ++at) {
         static_cast<void>(reader.readByte());
@@ -76,6 +85,20 @@ struct Stack {
         at = comma + 1;
     }
     return point;
+}
+
+/// One end of a move, as a stack request names it: which window, which slot of it, and what the
+/// client believes is there.
+void writeStackSlot(ByteWriter& writer, const std::int32_t container, const std::int32_t slot,
+                    const int protocol) {
+    writer.writeByte(static_cast<std::uint8_t>(container));
+    writer.writeByte(0); // No id of its own: this is not a bundle.
+    writer.writeByte(static_cast<std::uint8_t>(slot));
+    if (protocol >= 2168) {
+        writeIntLE(writer, 0);
+    } else {
+        writeVarInt(writer, 0);
+    }
 }
 
 /// One stack where it is named rather than moved: the creative menu and an entity's hand.
@@ -559,7 +582,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         static_cast<void>(readFloatLE(reader)); // and which way they are looking, in three.
         static_cast<void>(readFloatLE(reader));
         static_cast<void>(readFloatLE(reader));
-        static_cast<void>(readItem(reader));
+        static_cast<void>(readItem(reader, options_.protocol));
         static_cast<void>(readVarInt(reader)); // Which game type they are on.
         static_cast<void>(readMetadata(reader, options_.protocol));
         static_cast<void>(readVarUInt(reader)); // Entity properties, of which a player has none.
@@ -727,6 +750,101 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         say("creative menu: " + std::to_string(offered) + " item(s) in " + std::to_string(groups) + " group(s)");
         return;
     }
+    case Packet::ContainerOpen: {
+        const std::int32_t containerId = static_cast<std::int8_t>(reader.readByte());
+        const std::int32_t type = static_cast<std::int8_t>(reader.readByte());
+        const std::int32_t x = readVarInt(reader);
+        const std::int32_t y = static_cast<std::int32_t>(readVarUInt(reader));
+        const std::int32_t z = readVarInt(reader);
+        static_cast<void>(readVarLong(reader)); // Whose window it is, when it belongs to an entity.
+        if (reader.failed()) {
+            problem("a window opened with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a window opened and left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        say("window " + std::to_string(containerId) + " of kind " + std::to_string(type) + " opened at " +
+            std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
+        openContainer_ = containerId;
+        return;
+    }
+    case Packet::ContainerClose: {
+        const std::int32_t containerId = static_cast<std::int8_t>(reader.readByte());
+        static_cast<void>(reader.readByte()); // Which kind it was,
+        const bool byServer = reader.readByte() != 0; // and who closed it.
+        if (reader.failed()) {
+            problem("a window closed with a body that ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("a window closed and left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        say("window " + std::to_string(containerId) + " closed" + (byServer ? " by the server" : ""));
+        openContainer_ = -1;
+        return;
+    }
+    case Packet::ItemStackResponse: {
+        // What the server did with a request to move stacks: which one, whether it stood, and what
+        // the windows it named hold now.
+        const std::uint32_t answers = readVarUInt(reader);
+        std::string told;
+        for (std::uint32_t at = 0; at < answers && !reader.failed(); ++at) {
+            const std::uint8_t status = reader.readByte();
+            const std::int32_t requestId = readVarInt(reader);
+            told += (told.empty() ? "" : "; ") + std::string{"request "} + std::to_string(requestId) +
+                    (status == 0 ? " stood" : " was refused");
+            bool windows = status == 0;
+            if (options_.protocol >= 2168) {
+                windows = reader.readByte() != 0 && reader.readByte() != 0;
+            }
+            if (!windows) {
+                continue;
+            }
+            const std::uint32_t containers = readVarUInt(reader);
+            for (std::uint32_t window = 0; window < containers && !reader.failed(); ++window) {
+                const std::uint8_t container = reader.readByte();
+                if (reader.readByte() != 0) {
+                    static_cast<void>(readIntLE(reader));
+                }
+                const std::uint32_t slots = readVarUInt(reader);
+                told += ", window " + std::to_string(container) + " has " + std::to_string(slots) + " slot(s)";
+                for (std::uint32_t slot = 0; slot < slots && !reader.failed(); ++slot) {
+                    const std::uint8_t where = reader.readByte();
+                    static_cast<void>(reader.readByte()); // The same slot, as the hotbar numbers it,
+                    const std::uint8_t count = reader.readByte();
+                    if (options_.protocol >= 2168) {
+                        static_cast<void>(reader.readByte());
+                        if (reader.readByte() != 0) {
+                            static_cast<void>(readVarInt(reader));
+                        }
+                        static_cast<void>(readString(reader));
+                        if (reader.readByte() != 0) {
+                            static_cast<void>(readString(reader));
+                        }
+                    } else {
+                        static_cast<void>(readVarInt(reader));
+                        static_cast<void>(readString(reader));
+                        static_cast<void>(readString(reader));
+                    }
+                    static_cast<void>(readVarInt(reader)); // and how worn it is.
+                    told += " [" + std::to_string(where) + "]=" + std::to_string(count);
+                }
+            }
+        }
+        if (reader.failed()) {
+            problem("an answer to a stack request ran out");
+            return;
+        }
+        if (reader.remaining() != 0) {
+            problem("an answer to a stack request left " + std::to_string(reader.remaining()) + " bytes unread");
+            return;
+        }
+        say("stacks: " + told);
+        return;
+    }
     case Packet::InventoryContent: {
         // One window's worth of slots.
         const std::uint32_t containerId = readVarUInt(reader);
@@ -739,8 +857,9 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
                 continue;
             }
             ++filled;
-            held += (held.empty() ? "" : ", ") + std::to_string(stack.count) + "x item " +
-                    std::to_string(stack.id) + (stack.data == 0 ? "" : "/" + std::to_string(stack.data));
+            held += (held.empty() ? "" : ", ") + ("[" + std::to_string(at) + "] ") + std::to_string(stack.count) +
+                    "x item " + std::to_string(stack.id) +
+                    (stack.data == 0 ? "" : "/" + std::to_string(stack.data));
         }
         static_cast<void>(reader.readByte()); // Which part of a window this is,
         if (reader.readByte() != 0) {
@@ -1098,6 +1217,12 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         running_ = false;
         return;
     default:
+        // Every id this bot does not decode, said once each: a packet nobody reads is a packet
+        // nobody has checked, and a real client reads them all.
+        if (unread_.insert(static_cast<std::int32_t>(packet)).second) {
+            say("packet " + std::to_string(static_cast<std::int32_t>(packet)) + " arrived unread, " +
+                std::to_string(reader.remaining()) + " byte(s)");
+        }
         return;
     }
 }
@@ -1170,9 +1295,21 @@ void BedrockBot::sendAuthInput() {
     // that the server reads them, not that a bot can mine.
     const bool dig = !options_.digAt.empty() && !digSent_;
     const bool put = !options_.putAt.empty() && !putSent_;
+    const bool swap =
+        (!options_.swapSlots.empty() || !options_.stashSlots.empty() || !options_.takeSlots.empty()) && !swapSent_;
+    // Which windows the two ends are in: the carried 36, or whatever block is open.
+    const std::int32_t swapFromContainer = options_.takeSlots.empty() ? 12 : 7;
+    const std::int32_t swapInto = options_.stashSlots.empty() ? 12 : 7;
     const std::array<std::int32_t, 3> at = pointOf(dig ? options_.digAt : options_.putAt);
+    const std::string& asked = !options_.stashSlots.empty()  ? options_.stashSlots
+                               : !options_.takeSlots.empty() ? options_.takeSlots
+                                                             : options_.swapSlots;
+    const std::array<std::int32_t, 3> slots = pointOf(asked + ",0");
+    const std::int32_t swapFrom = slots[0];
+    const std::int32_t swapTo = slots[1];
     digSent_ = digSent_ || dig;
     putSent_ = putSent_ || put;
+    swapSent_ = swapSent_ || swap;
 
     ByteWriter body;
     writeFloatLE(body, 0.0F); // Pitch.
@@ -1186,12 +1323,19 @@ void BedrockBot::sendAuthInput() {
     // Which flags are on, which is what says the pieces below are there at all.
     if (options_.protocol >= 2168) {
         body.writeByte(1);
-        writeVarUInt(body, static_cast<std::uint32_t>((dig ? 1 : 0) + (put ? 1 : 0)));
+        writeVarUInt(body, static_cast<std::uint32_t>((dig ? 1 : 0) + (put ? 1 : 0) + (swap ? 1 : 0) +
+                                                      (options_.sneaking ? 1 : 0)));
+        if (options_.sneaking) {
+            writeVarInt(body, 8);
+        }
         if (put) {
             writeVarInt(body, 34);
         }
         if (dig) {
             writeVarInt(body, 35);
+        }
+        if (swap) {
+            writeVarInt(body, 36);
         }
     } else {
         // One long varint of bits. Thirty-four and thirty-five are the two this bot ever sets, so
@@ -1199,6 +1343,8 @@ void BedrockBot::sendAuthInput() {
         std::uint64_t bits = 0;
         bits |= put ? (1ULL << 34U) : 0;
         bits |= dig ? (1ULL << 35U) : 0;
+        bits |= swap ? (1ULL << 36U) : 0;
+        bits |= options_.sneaking ? (1ULL << 8U) : 0;
         for (int part = 0; part < 6; ++part) {
             const std::uint8_t seven = static_cast<std::uint8_t>((bits >> (7U * static_cast<std::uint32_t>(part))) & 0x7fU);
             const bool more = (bits >> (7U * static_cast<std::uint32_t>(part + 1))) != 0;
@@ -1227,37 +1373,93 @@ void BedrockBot::sendAuthInput() {
         }
         return present;
     };
+    const bool native = options_.protocol >= 2168;
     if (optional(put)) {
-        {
-            writeVarInt(body, 0);  // No legacy request,
-            writeVarUInt(body, 0); // and nothing moved between windows.
-            writeVarUInt(body, 0); // A click on a block.
-            writeVarInt(body, at[0]);
-            writeVarUInt(body, static_cast<std::uint32_t>(at[1]));
-            writeVarInt(body, at[2]);
-            writeVarInt(body, 1); // On its top,
-            writeVarInt(body, 0); // with what is in the first slot.
-            // What is in hand, which for this bot is the first item the server named: enough for
-            // the server to see an id it gave out come back.
+        writeVarInt(body, 0); // No legacy request,
+        if (native) {
+            body.writeByte(0); // no slots left over from one,
+            body.writeByte(1); // and a list of moves that is there
+            body.writeByte(1);
+        }
+        writeVarUInt(body, 0); // but empty.
+        // A click on a block, set off by a hand rather than by the server asking again.
+        if (native) {
+            writeVarInt(body, 0);
+            body.writeByte(0);
+        } else {
+            writeVarUInt(body, 0);
+            writeVarUInt(body, 0);
+        }
+        writeVarInt(body, at[0]);
+        writeVarUInt(body, static_cast<std::uint32_t>(at[1]));
+        writeVarInt(body, at[2]);
+        if (native) {
+            body.writeByte(1); // On its top,
+        } else {
             writeVarInt(body, 1);
-            writeShortLE(body, 1);  // One of them,
-            writeVarUInt(body, 0);  // undamaged,
-            body.writeByte(0);      // with no net id,
-            writeVarInt(body, 0);   // placing no block of its own
-            writeVarUInt(body, 0);  // and nothing written on it.
-            writeFloatLE(body, x_); // Where this bot is,
-            writeFloatLE(body, y_);
-            writeFloatLE(body, z_);
-            writeFloatLE(body, 0.5F); // and where on the face it clicked.
-            writeFloatLE(body, 1.0F);
-            writeFloatLE(body, 0.5F);
-            writeVarUInt(body, 0); // Which block it thinks is there.
-            if (options_.protocol >= 975) {
-                body.writeByte(0);
-            }
+        }
+        writeVarInt(body, 0); // with what is in the first slot.
+        // What is in hand, which for this bot is the first item the server named: enough for
+        // the server to see an id it gave out come back. From 2168 the id is a short.
+        if (native) {
+            writeShortLE(body, 1);
+        } else {
+            writeVarInt(body, 1);
+        }
+        writeShortLE(body, 1);  // One of them,
+        writeVarUInt(body, 0);  // undamaged,
+        body.writeByte(0);      // with no net id,
+        writeVarUInt(body, 0);  // placing no block of its own
+        writeVarUInt(body, 0);  // and nothing written on it.
+        writeFloatLE(body, x_); // Where this bot is,
+        writeFloatLE(body, y_);
+        writeFloatLE(body, z_);
+        writeFloatLE(body, 0.5F); // and where on the face it clicked.
+        writeFloatLE(body, 1.0F);
+        writeFloatLE(body, 0.5F);
+        writeVarUInt(body, 0); // Which block it thinks is there,
+        if (native) {
+            body.writeByte(0); // and what it thinks the click did.
+        } else {
+            writeVarUInt(body, 0);
+        }
+        if (options_.protocol >= 944) {
+            body.writeByte(0); // Nothing on cooldown.
         }
     }
-    static_cast<void>(optional(false)); // No request to move stacks around.
+    if (optional(swap)) {
+        // Either the two slots trade places, or a count is carried from one to the other through
+        // the cursor, which is the pair of lines a real client sends for a click and a click.
+        const std::int32_t carried = slots[2];
+        // Take, place and swap are the first three on both numberings.
+        constexpr std::int32_t kTakeLine = 0;
+        constexpr std::int32_t kPlaceLine = 1;
+        constexpr std::int32_t kSwapLine = 2;
+        writeVarInt(body, ++requestId_);
+        writeVarUInt(body, carried > 0 ? 2 : 1);
+        const auto line = [&body, native](const std::int32_t id) {
+            if (native) {
+                writeVarUInt(body, static_cast<std::uint32_t>(id));
+            }
+            body.writeByte(static_cast<std::uint8_t>(id));
+        };
+        if (carried > 0) {
+            line(kTakeLine);
+            body.writeByte(static_cast<std::uint8_t>(carried));
+            writeStackSlot(body, swapFromContainer, swapFrom, options_.protocol);
+            writeStackSlot(body, 59, 0, options_.protocol);
+            line(kPlaceLine);
+            body.writeByte(static_cast<std::uint8_t>(carried));
+            writeStackSlot(body, 59, 0, options_.protocol);
+            writeStackSlot(body, swapInto, swapTo, options_.protocol);
+        } else {
+            line(kSwapLine);
+            writeStackSlot(body, swapFromContainer, swapFrom, options_.protocol);
+            writeStackSlot(body, swapInto, swapTo, options_.protocol);
+        }
+        writeVarUInt(body, 0); // Nothing typed where a server may filter it,
+        writeIntLE(body, -1);  // and nothing said about where it came from.
+    }
     if (optional(dig)) {
         if (options_.protocol >= 2168) {
             writeVarUInt(body, 1);
@@ -1419,10 +1621,22 @@ void BedrockBot::run() {
     }
     if (spawned_ && options_.stayMillis > 0) {
         const std::int64_t leaveAt = nowMillis() + options_.stayMillis;
+        // A real client says goodbye to a window before it leaves, and the server owes it an
+        // answer: sending one with time to spare is what tests that path at all.
+        const std::int64_t closeAt = leaveAt - (options_.stayMillis / 3);
         std::int64_t nextStep = nowMillis();
+        bool closeSent = false;
         while (running_ && nowMillis() < leaveAt) {
             if (!pump(100)) {
                 break;
+            }
+            if (!closeSent && openContainer_ >= 0 && nowMillis() >= closeAt) {
+                ByteWriter close;
+                close.writeByte(static_cast<std::uint8_t>(openContainer_));
+                close.writeByte(0); // A plain container,
+                close.writeByte(0); // closed by the client rather than by the server.
+                send(Packet::ContainerClose, close.bytes());
+                closeSent = true;
             }
             if (nowMillis() >= nextStep) {
                 // A step east every tenth of a second, which is about what a walking player does.
