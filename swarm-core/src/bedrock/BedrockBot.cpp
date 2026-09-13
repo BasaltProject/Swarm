@@ -43,7 +43,7 @@ struct Stack {
     if (reader.readByte() != 0) {
         static_cast<void>(readVarInt(reader)); // and which one of its kind, when the server counts them.
     }
-    static_cast<void>(readVarInt(reader));  // Which block it places.
+    static_cast<void>(readVarInt(reader)); // Which block it places.
     const std::uint32_t extra = readVarUInt(reader);
     for (std::uint32_t at = 0; at < extra && !reader.failed(); ++at) {
         static_cast<void>(reader.readByte()); // The nbt and the lists, which this bot does not read.
@@ -89,8 +89,7 @@ struct Stack {
 
 /// One end of a move, as a stack request names it: which window, which slot of it, and what the
 /// client believes is there.
-void writeStackSlot(ByteWriter& writer, const std::int32_t container, const std::int32_t slot,
-                    const int protocol) {
+void writeStackSlot(ByteWriter& writer, const std::int32_t container, const std::int32_t slot, const int protocol) {
     writer.writeByte(static_cast<std::uint8_t>(container));
     writer.writeByte(0); // No id of its own: this is not a bundle.
     writer.writeByte(static_cast<std::uint8_t>(slot));
@@ -432,12 +431,14 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             static_cast<void>(reader.readByte());  // neither of which 975 and below know about.
         }
 
-        static_cast<void>(readString(reader));  // The world's id,
-        static_cast<void>(readString(reader));  // its name,
-        static_cast<void>(readString(reader));  // the template it came from,
+        static_cast<void>(readString(reader)); // The world's id,
+        static_cast<void>(readString(reader)); // its name,
+        static_cast<void>(readString(reader)); // the template it came from,
         static_cast<void>(reader.readByte());  // whether it is a trial,
-        static_cast<void>(readVarInt(reader)); // how movement is settled, in three fields,
-        static_cast<void>(readVarInt(reader)); // how much of it it rewinds,
+        // How movement is settled, in two fields. There was a third in front of them naming the
+        // mode and 818 took it away: reading it anyway is how this bot agreed with a server that
+        // wrote one varint too many, and neither of them noticed.
+        static_cast<void>(readVarInt(reader));  // how much of it it rewinds,
         static_cast<void>(reader.readByte());   // who breaks blocks,
         static_cast<void>(readLongLE(reader));  // what tick it is,
         static_cast<void>(readVarInt(reader));  // the enchantment seed,
@@ -547,7 +548,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             static_cast<void>(reader.readByte()); // A teacher,
             static_cast<void>(reader.readByte()); // the host,
             static_cast<void>(reader.readByte()); // or somebody's second player on one console.
-            static_cast<void>(readIntLE(reader));  // What colour their name is drawn in.
+            static_cast<void>(readIntLE(reader)); // What colour their name is drawn in.
             if (reader.failed()) {
                 problem("a player list line ran off the end of the packet");
                 break;
@@ -704,7 +705,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             static_cast<void>(readString(reader));  // Its name,
             static_cast<void>(readShortLE(reader)); // the number it answers to,
             static_cast<void>(reader.readByte());   // whether components drive it,
-            static_cast<void>(readVarInt(reader)); // which version of an item it is,
+            static_cast<void>(readVarInt(reader));  // which version of an item it is,
             // The components, which for everything this server sends is an empty compound: a tag
             // byte, a name of nothing and the end of it.
             if (reader.readByte() != 0x0a || readVarUInt(reader) != 0 || reader.readByte() != 0x00) {
@@ -729,7 +730,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         // as long as the item list, so a line misread is every line after it misread.
         const std::uint32_t groups = readVarUInt(reader);
         for (std::uint32_t at = 0; at < groups && !reader.failed(); ++at) {
-            static_cast<void>(reader.readByte()); // Which tab it sits under,
+            static_cast<void>(reader.readByte());  // Which tab it sits under,
             static_cast<void>(readString(reader)); // what it is called,
             readItemInstance(reader);              // and what is drawn on it.
         }
@@ -808,7 +809,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
     }
     case Packet::ContainerClose: {
         const std::int32_t containerId = static_cast<std::int8_t>(reader.readByte());
-        static_cast<void>(reader.readByte()); // Which kind it was,
+        static_cast<void>(reader.readByte());         // Which kind it was,
         const bool byServer = reader.readByte() != 0; // and who closed it.
         if (reader.failed()) {
             problem("a window closed with a body that ran out");
@@ -894,8 +895,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             }
             ++filled;
             held += (held.empty() ? "" : ", ") + ("[" + std::to_string(at) + "] ") + std::to_string(stack.count) +
-                    "x item " + std::to_string(stack.id) +
-                    (stack.data == 0 ? "" : "/" + std::to_string(stack.data));
+                    "x item " + std::to_string(stack.id) + (stack.data == 0 ? "" : "/" + std::to_string(stack.data));
         }
         static_cast<void>(reader.readByte()); // Which part of a window this is,
         if (reader.readByte() != 0) {
@@ -986,7 +986,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
     case Packet::SpawnParticleEffect: {
         // A particle, under the name Bedrock knows it by. Read to the last byte: a shape that grew
         // without us noticing is exactly what this bot is for.
-        static_cast<void>(reader.readByte()); // Which dimension it belongs to.
+        static_cast<void>(reader.readByte());   // Which dimension it belongs to.
         static_cast<void>(readVarLong(reader)); // Which entity, or -1 for none.
         const float x = readFloatLE(reader);
         static_cast<void>(readFloatLE(reader));
@@ -1390,7 +1390,8 @@ void BedrockBot::sendAuthInput() {
         bits |= swap ? (1ULL << 36U) : 0;
         bits |= options_.sneaking ? (1ULL << 8U) : 0;
         for (int part = 0; part < 6; ++part) {
-            const std::uint8_t seven = static_cast<std::uint8_t>((bits >> (7U * static_cast<std::uint32_t>(part))) & 0x7fU);
+            const std::uint8_t seven =
+                static_cast<std::uint8_t>((bits >> (7U * static_cast<std::uint32_t>(part))) & 0x7fU);
             const bool more = (bits >> (7U * static_cast<std::uint32_t>(part + 1))) != 0;
             body.writeByte(static_cast<std::uint8_t>(seven | (more ? 0x80U : 0U)));
             if (!more) {
@@ -1518,7 +1519,7 @@ void BedrockBot::sendAuthInput() {
     }
     static_cast<void>(optional(false)); // Riding nothing,
     static_cast<void>(optional(false)); // and predicting nothing about it.
-    writeFloatLE(body, 0.0F); // Analog move.
+    writeFloatLE(body, 0.0F);           // Analog move.
     writeFloatLE(body, 0.0F);
     writeFloatLE(body, 0.0F); // Camera orientation.
     writeFloatLE(body, 0.0F);
