@@ -3,6 +3,9 @@
 #include <basalt/swarm/KnownVersions.hpp>
 #include <basalt/swarm/Nbt.hpp>
 
+#include <fstream>
+#include <vector>
+
 namespace basalt::swarm {
 namespace {
 
@@ -12,20 +15,13 @@ constexpr std::int32_t kArgument = 2;
 constexpr std::int32_t kRedirect = 8;
 constexpr std::int32_t kCustomSuggestions = 16;
 
-/// parity: `ArgumentTypeInfos`' own registration order, which has not moved since 1.19.
-constexpr std::int32_t kBrigadierDouble = 1;
-constexpr std::int32_t kBrigadierFloat = 2;
-constexpr std::int32_t kBrigadierInteger = 3;
-constexpr std::int32_t kBrigadierLong = 4;
-constexpr std::int32_t kBrigadierString = 5;
-constexpr std::int32_t kEntity = 6;
-constexpr std::int32_t kScoreHolder = 29;
-constexpr std::int32_t kTime = 41;
-constexpr std::int32_t kResourceOrTag = 44;
-constexpr std::int32_t kResourceOrTagKey = 45;
-constexpr std::int32_t kResource = 46;
-constexpr std::int32_t kResourceKey = 47;
-constexpr std::int32_t kResourceSelector = 48;
+/// Where a version's own parser ids are not known, the ones from 1.19 to 1.20.2, which is where the
+/// old fixed table was right.
+[[nodiscard]] std::int32_t parserId(const std::int32_t protocol, const std::string_view name,
+                                    const std::int32_t fallback) {
+    const std::int32_t id = knownVersions::argumentType(protocol, name);
+    return id >= 0 ? id : fallback;
+}
 
 /// A packet claiming more entries than the bytes left can hold is malformed, and looping on its
 /// number is how a bot hangs instead of reporting it.
@@ -34,12 +30,18 @@ constexpr std::int32_t kResourceSelector = 48;
 }
 
 /// Walks past a parser's own configuration, answering the registry it names when it names one.
-[[nodiscard]] std::string readParserProperties(ByteReader& data, const std::int32_t parser) {
-    switch (parser) {
-    case kBrigadierFloat:
-    case kBrigadierDouble: {
+[[nodiscard]] std::string readParserProperties(ByteReader& data, const std::int32_t protocol,
+                                               const std::int32_t parser) {
+    const auto is = [protocol, parser](const std::string_view name, const std::int32_t fallback) {
+        return parser == parserId(protocol, name, fallback);
+    };
+    const bool isFloat = is("brigadier:float", 1);
+    const bool isDouble = is("brigadier:double", 2);
+    const bool isInteger = is("brigadier:integer", 3);
+    const bool isLong = is("brigadier:long", 4);
+    if (isFloat || isDouble || isInteger || isLong) {
         const std::int32_t flags = data.readByte();
-        const std::size_t width = parser == kBrigadierDouble ? 8 : 4;
+        const std::size_t width = isDouble || isLong ? 8 : 4;
         if ((flags & 1) != 0) {
             data.skip(width);
         }
@@ -48,35 +50,19 @@ constexpr std::int32_t kResourceSelector = 48;
         }
         return {};
     }
-    case kBrigadierInteger:
-    case kBrigadierLong: {
-        const std::int32_t flags = data.readByte();
-        const std::size_t width = parser == kBrigadierLong ? 8 : 4;
-        if ((flags & 1) != 0) {
-            data.skip(width);
-        }
-        if ((flags & 2) != 0) {
-            data.skip(width);
-        }
-        return {};
-    }
-    case kBrigadierString:
-    case kEntity:
-    case kScoreHolder:
+    if (is("brigadier:string", 5) || is("minecraft:entity", 6) || is("minecraft:score_holder", 29)) {
         static_cast<void>(data.readByte());
         return {};
-    case kTime:
+    }
+    if (is("minecraft:time", 40)) {
         data.skip(4);
         return {};
-    case kResource:
-    case kResourceKey:
-    case kResourceOrTag:
-    case kResourceOrTagKey:
-    case kResourceSelector:
-        return data.readVarString();
-    default:
-        return {};
     }
+    if (is("minecraft:resource_or_tag", 41) || is("minecraft:resource_or_tag_key", 42) ||
+        is("minecraft:resource", 43) || is("minecraft:resource_key", 44) || is("minecraft:resource_selector", -1)) {
+        return data.readVarString();
+    }
+    return {};
 }
 
 } // namespace
@@ -135,32 +121,101 @@ void Checks::tags(ByteReader& data) {
     }
 }
 
-void Checks::commands(ByteReader& data) {
-    const std::int32_t nodes = data.readVarInt();
-    for (std::int32_t n = 0; n < nodes && sane(data, 0); ++n) {
-        const std::int32_t flags = data.readByte();
-        const std::int32_t children = data.readVarInt();
-        for (std::int32_t c = 0; c < children && sane(data, 0); ++c) {
-            static_cast<void>(data.readVarInt());
+namespace {
+
+struct TreeNode {
+    std::int32_t flags = 0;
+    std::vector<std::int32_t> children;
+    std::int32_t redirect = -1;
+    std::string name;
+    std::int32_t parser = -1;
+    std::string suggestions;
+};
+
+/// One line per node reached from the root: path, parser id (-1 on a literal), executable,
+/// redirect path and suggestion provider. Redirects are named, not followed, as `commands.json` does.
+void dumpTree(const std::vector<TreeNode>& nodes, const std::int32_t root, const std::string& path) {
+    std::vector<std::string> paths(nodes.size());
+    std::vector<std::int32_t> order;
+    std::vector<std::int32_t> stack{root};
+    std::vector<bool> seen(nodes.size(), false);
+    while (!stack.empty()) {
+        const std::int32_t at = stack.back();
+        stack.pop_back();
+        if (at < 0 || static_cast<std::size_t>(at) >= nodes.size() || seen[static_cast<std::size_t>(at)]) {
+            continue;
         }
-        if ((flags & kRedirect) != 0) {
-            static_cast<void>(data.readVarInt());
-        }
-        const std::int32_t kind = flags & kKind;
-        if (kind != kRoot) {
-            static_cast<void>(data.readVarString());
-        }
-        if (kind == kArgument) {
-            const std::int32_t parser = data.readVarInt();
-            const std::string registry = readParserProperties(data, parser);
-            if (!registry.empty() && !knownVersions::knows(protocol_, registry)) {
-                complain("a command argument names the registry " + registry + ", which does not exist here");
-            }
-            if ((flags & kCustomSuggestions) != 0) {
-                static_cast<void>(data.readVarString());
+        seen[static_cast<std::size_t>(at)] = true;
+        order.push_back(at);
+        for (const std::int32_t child : nodes[static_cast<std::size_t>(at)].children) {
+            if (child >= 0 && static_cast<std::size_t>(child) < nodes.size() &&
+                !seen[static_cast<std::size_t>(child)]) {
+                const std::string& parent = paths[static_cast<std::size_t>(at)];
+                paths[static_cast<std::size_t>(child)] =
+                    (parent.empty() ? "" : parent + " ") + nodes[static_cast<std::size_t>(child)].name;
+                stack.push_back(child);
             }
         }
     }
+    std::ofstream out{path, std::ios::trunc};
+    for (const std::int32_t at : order) {
+        if (at == root) {
+            continue;
+        }
+        const TreeNode& node = nodes[static_cast<std::size_t>(at)];
+        const bool redirects = node.redirect >= 0 && static_cast<std::size_t>(node.redirect) < nodes.size();
+        out << paths[static_cast<std::size_t>(at)] << '\t' << node.parser << '\t' << ((node.flags & 4) != 0 ? 1 : 0)
+            << '\t' << (redirects ? paths[static_cast<std::size_t>(node.redirect)] : std::string{"-"}) << '\t'
+            << (node.suggestions.empty() ? std::string{"-"} : node.suggestions) << '\n';
+    }
+}
+
+} // namespace
+
+void Checks::commands(ByteReader& data) {
+    const std::int32_t nodes = data.readVarInt();
+    std::vector<TreeNode> tree;
+    for (std::int32_t n = 0; n < nodes && sane(data, 0); ++n) {
+        TreeNode node;
+        node.flags = data.readByte();
+        const std::int32_t children = data.readVarInt();
+        for (std::int32_t c = 0; c < children && sane(data, 0); ++c) {
+            node.children.push_back(data.readVarInt());
+        }
+        if ((node.flags & kRedirect) != 0) {
+            node.redirect = data.readVarInt();
+        }
+        const std::int32_t kind = node.flags & kKind;
+        if (kind != kRoot) {
+            node.name = data.readVarString();
+        }
+        if (kind == kArgument) {
+            node.parser = data.readVarInt();
+            std::string registry = readParserProperties(data, protocol_, node.parser);
+            // The client reads it as an identifier, so a bare path is in the default namespace.
+            if (!registry.empty() && registry.find(':') == std::string::npos) {
+                registry = "minecraft:" + registry;
+            }
+            if (!registry.empty() && !knownVersions::knows(protocol_, registry)) {
+                complain("a command argument names the registry " + registry + ", which does not exist here");
+            }
+            if ((node.flags & kCustomSuggestions) != 0) {
+                node.suggestions = data.readVarString();
+            }
+        }
+        if (!commandsDump_.empty()) {
+            tree.push_back(std::move(node));
+        }
+    }
+    const std::int32_t root = data.readVarInt();
+    if (commandsDump_.empty()) {
+        return;
+    }
+    if (data.failed()) {
+        complain("the command tree could not be read to the end, so it was not written");
+        return;
+    }
+    dumpTree(tree, root, commandsDump_);
 }
 
 void Checks::updateRecipes(ByteReader& data) {

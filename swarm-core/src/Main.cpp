@@ -61,6 +61,8 @@ struct Arguments {
     std::vector<std::int32_t> bedrockProtocols{bedrock::kBedrockProtocol};
     std::string chatLine;
     std::string commandLine;
+    std::int32_t useCount = 0;
+    std::int32_t useEveryMillis = 3000;
     std::string digAt;
     std::string putAt;
     std::string swapSlots;
@@ -69,6 +71,7 @@ struct Arguments {
     std::int32_t intoContainer = 0;
     std::int32_t fromContainer = 0;
     bool sneaking = false;
+    std::string commandsDump;
     bool ok = true;
 };
 
@@ -166,6 +169,12 @@ struct Arguments {
         } else if (flag == "--dig") {
             parsed.digAt = std::string{next};
             i += 2;
+        } else if (flag == "--use") {
+            parsed.useCount = numberOf<std::int32_t>(next).value_or(parsed.useCount);
+            i += 2;
+        } else if (flag == "--use-every") {
+            parsed.useEveryMillis = numberOf<std::int32_t>(next).value_or(parsed.useEveryMillis);
+            i += 2;
         } else if (flag == "--put") {
             parsed.putAt = std::string{next};
             i += 2;
@@ -183,6 +192,9 @@ struct Arguments {
             i += 2;
         } else if (flag == "--stay") {
             parsed.stayMillis = numberOf<std::int32_t>(next).value_or(parsed.stayMillis);
+            i += 2;
+        } else if (flag == "--dump-commands") {
+            parsed.commandsDump = std::string{next};
             i += 2;
         } else if (flag == "--spread") {
             parsed.spread = doubleOf(next).value_or(parsed.spread);
@@ -231,6 +243,8 @@ int main(int argc, char** argv) {
                 parsed.bedrockProtocols[static_cast<std::size_t>(id - 1) % parsed.bedrockProtocols.size()];
             options.chatLine = parsed.chatLine;
             options.commandLine = parsed.commandLine;
+            options.useCount = parsed.useCount;
+            options.useEveryMillis = parsed.useEveryMillis;
             options.digAt = parsed.digAt;
             options.putAt = parsed.putAt;
             options.swapSlots = parsed.swapSlots;
@@ -260,6 +274,7 @@ int main(int argc, char** argv) {
         options.physicsEnabled = parsed.physicsEnabled;
         options.profile = parsed.profile;
         options.say = say;
+        options.commandsDump = parsed.commandsDump;
         if (static_cast<std::size_t>(id - 1) < targets.size()) {
             options.target = targets[static_cast<std::size_t>(id - 1)];
         }

@@ -28,6 +28,8 @@ namespace tables {
 
 [[nodiscard]] std::span<const Entry> packetIds();
 
+[[nodiscard]] std::span<const Entry> argumentTypes();
+
 } // namespace tables
 
 /// Whether anything is known about that version at all.
@@ -35,6 +37,9 @@ namespace tables {
 
 /// The id that packet has there, or -1 when this tool cannot check that version.
 [[nodiscard]] std::int32_t packetId(std::int32_t protocol, std::string_view packet);
+
+/// The id that command parser has there, or -1. Only the parsers that carry properties are kept.
+[[nodiscard]] std::int32_t argumentType(std::int32_t protocol, std::string_view parser);
 
 [[nodiscard]] bool knows(std::int32_t protocol, std::string_view registry);
 

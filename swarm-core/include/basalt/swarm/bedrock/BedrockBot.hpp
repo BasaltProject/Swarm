@@ -35,6 +35,9 @@ public:
         std::string digAt;
         /// A block to click with what is in hand, as x,y,z, or nothing to click none.
         std::string putAt;
+        /// How many times to use what is in hand on nothing, and how long apart, in milliseconds.
+        std::int32_t useCount = 0;
+        std::int32_t useEveryMillis = 3000;
         /// Two slots of the carried 36 to trade places, as a,b, or a,b,n to carry n of them
         /// through the cursor. Nothing moves none.
         std::string swapSlots;
@@ -145,6 +148,8 @@ private:
     /// The one block action or click still to send, which goes out with the next input.
     bool digSent_ = false;
     bool putSent_ = false;
+    std::int32_t usesSent_ = 0;
+    std::int64_t nextUseAt_ = 0;
     bool swapSent_ = false;
     /// The window this bot has open, or -1 when it has none.
     std::int32_t openContainer_ = -1;

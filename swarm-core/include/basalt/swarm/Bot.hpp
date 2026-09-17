@@ -33,6 +33,8 @@ public:
         ProtocolProfile profile = protocols::newest();
         /// Where a bot's own lines go. One place, so a swarm can be made quiet.
         std::function<void(const std::string&)> say;
+        /// Where the command tree goes, see `Checks::dumpCommandsTo`.
+        std::string commandsDump;
     };
 
     explicit Bot(Options options);

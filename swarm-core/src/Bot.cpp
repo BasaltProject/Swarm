@@ -44,7 +44,9 @@ Bot::Bot(Options options)
     : options_(std::move(options)),
       checks_(options_.profile.protocol,
               [this](const std::string& what) { say("Bot " + std::to_string(options_.id) + ": " + what); }),
-      random_(std::random_device{}()) {}
+      random_(std::random_device{}()) {
+    checks_.dumpCommandsTo(options_.commandsDump);
+}
 
 void Bot::say(const std::string& line) const {
     if (options_.say) {

@@ -72,6 +72,8 @@ template <typename Value, typename Parse>
 
 std::mutex idsLock;
 std::map<std::int32_t, std::map<std::string, std::int32_t, std::less<>>> idsCache;
+std::mutex argumentsLock;
+std::map<std::int32_t, std::map<std::string, std::int32_t, std::less<>>> argumentsCache;
 std::mutex entriesLock;
 std::map<std::int32_t, std::set<std::string, std::less<>>> entriesCache;
 std::mutex keysLock;
@@ -89,6 +91,13 @@ std::int32_t packetId(const std::int32_t protocol, const std::string_view packet
     const auto& ids =
         cached(idsCache, idsLock, protocol, [protocol] { return pairsOf(valueFor(tables::packetIds(), protocol)); });
     const auto found = ids.find(packet);
+    return found == ids.end() ? -1 : found->second;
+}
+
+std::int32_t argumentType(const std::int32_t protocol, const std::string_view parser) {
+    const auto& ids = cached(argumentsCache, argumentsLock, protocol,
+                             [protocol] { return pairsOf(valueFor(tables::argumentTypes(), protocol)); });
+    const auto found = ids.find(parser);
     return found == ids.end() ? -1 : found->second;
 }
 

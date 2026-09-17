@@ -1334,7 +1334,9 @@ void BedrockBot::sendAuthInput() {
     // One block action or one click, the first time round and never again: what is being tested is
     // that the server reads them, not that a bot can mine.
     const bool dig = !options_.digAt.empty() && !digSent_;
-    const bool put = !options_.putAt.empty() && !putSent_;
+    // A click on nothing, the way a rod is cast and reeled in.
+    const bool use = usesSent_ < options_.useCount && nowMillis() >= nextUseAt_;
+    const bool put = (!options_.putAt.empty() && !putSent_) || use;
     const bool swap =
         (!options_.swapSlots.empty() || !options_.stashSlots.empty() || !options_.takeSlots.empty()) && !swapSent_;
     // Which windows the two ends are in: the carried 36, or whatever block is open.
@@ -1352,7 +1354,12 @@ void BedrockBot::sendAuthInput() {
     const std::int32_t swapFrom = slots[0];
     const std::int32_t swapTo = slots[1];
     digSent_ = digSent_ || dig;
-    putSent_ = putSent_ || put;
+    putSent_ = putSent_ || (put && !use);
+    if (use) {
+        ++usesSent_;
+        nextUseAt_ = nowMillis() + options_.useEveryMillis;
+        say("used what is in hand, " + std::to_string(usesSent_) + " of " + std::to_string(options_.useCount));
+    }
     swapSent_ = swapSent_ || swap;
 
     ByteWriter body;
@@ -1427,12 +1434,13 @@ void BedrockBot::sendAuthInput() {
             body.writeByte(1);
         }
         writeVarUInt(body, 0); // but empty.
-        // A click on a block, set off by a hand rather than by the server asking again.
+        // A click on a block, or on nothing, set off by a hand rather than by the server asking again.
+        const std::int32_t action = use ? 1 : 0;
         if (native) {
-            writeVarInt(body, 0);
+            writeVarInt(body, action);
             body.writeByte(0);
         } else {
-            writeVarUInt(body, 0);
+            writeVarUInt(body, static_cast<std::uint32_t>(action));
             writeVarUInt(body, 0);
         }
         writeVarInt(body, at[0]);

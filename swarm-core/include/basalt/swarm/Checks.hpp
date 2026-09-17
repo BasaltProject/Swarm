@@ -23,6 +23,10 @@ public:
 
     [[nodiscard]] std::int32_t problems() const noexcept { return problems_; }
 
+    /// Where every command tree received is written, one path per line, for diffing against the
+    /// jar's `commands.json`. Empty writes nothing.
+    void dumpCommandsTo(std::string path) { commandsDump_ = std::move(path); }
+
     [[nodiscard]] bool checkable() const;
 
     [[nodiscard]] std::int32_t packetId(std::string_view packet) const;
@@ -55,6 +59,7 @@ private:
     Report report_;
     std::set<std::string, std::less<>> complained_;
     std::int32_t problems_ = 0;
+    std::string commandsDump_;
 };
 
 } // namespace basalt::swarm
