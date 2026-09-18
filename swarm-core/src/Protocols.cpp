@@ -29,8 +29,12 @@ using Configuration = ProtocolProfile::ConfigurationIds;
 [[nodiscard]] std::vector<ProtocolProfile> build() {
     // 26.1 and 26.2 number their packets identically: the jump between them moved no packet at
     // all, so what is written here for one holds for the other.
-    const ProtocolProfile v26_2{
-        .protocol = 776, .label = "26.2", .play = Play{.clientboundAddEntity = 1, .clientboundSystemChat = 121}};
+    const ProtocolProfile v26_2{.protocol = 776,
+                                .label = "26.2",
+                                .play = Play{.clientboundAddEntity = 1,
+                                             .serverboundUseItemOn = 0x42,
+                                             .serverboundInteract = 0x1a,
+                                             .clientboundSystemChat = 121}};
     const ProtocolProfile v26_1 = like(v26_2, 775, "26.1");
 
     // 1.21.11 moved the play ids down by one, and nothing a bot sends changed shape.

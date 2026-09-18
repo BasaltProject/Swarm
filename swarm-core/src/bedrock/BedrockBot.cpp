@@ -1375,9 +1375,12 @@ void BedrockBot::sendAuthInput() {
     if (options_.protocol >= 2168) {
         body.writeByte(1);
         writeVarUInt(body, static_cast<std::uint32_t>((dig ? 1 : 0) + (put ? 1 : 0) + (swap ? 1 : 0) +
-                                                      (options_.sneaking ? 1 : 0)));
+                                                      (options_.sneaking ? 1 : 0) + (options_.grounded ? 1 : 0)));
         if (options_.sneaking) {
             writeVarInt(body, 8);
+        }
+        if (options_.grounded) {
+            writeVarInt(body, 50);
         }
         if (put) {
             writeVarInt(body, 34);
@@ -1389,14 +1392,15 @@ void BedrockBot::sendAuthInput() {
             writeVarInt(body, 36);
         }
     } else {
-        // One long varint of bits. Thirty-four and thirty-five are the two this bot ever sets, so
-        // the run is five bytes at most.
+        // One long varint of bits. Fifty, standing on the ground, is the highest this bot sets, so
+        // the run is eight bytes at most.
         std::uint64_t bits = 0;
         bits |= put ? (1ULL << 34U) : 0;
         bits |= dig ? (1ULL << 35U) : 0;
         bits |= swap ? (1ULL << 36U) : 0;
         bits |= options_.sneaking ? (1ULL << 8U) : 0;
-        for (int part = 0; part < 6; ++part) {
+        bits |= options_.grounded ? (1ULL << 50U) : 0;
+        for (int part = 0; part < 8; ++part) {
             const std::uint8_t seven =
                 static_cast<std::uint8_t>((bits >> (7U * static_cast<std::uint32_t>(part))) & 0x7fU);
             const bool more = (bits >> (7U * static_cast<std::uint32_t>(part + 1))) != 0;

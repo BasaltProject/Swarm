@@ -62,6 +62,12 @@ struct Arguments {
     std::string chatLine;
     std::string commandLine;
     std::int32_t useCount = 0;
+    std::string placeAt;
+    std::int32_t placeCount = 1;
+    std::int32_t placeFace = 1;
+    std::optional<std::int32_t> interactType;
+    std::int32_t interactCount = 1;
+    std::int32_t interactEveryMillis = 1000;
     std::int32_t useEveryMillis = 3000;
     std::string digAt;
     std::string putAt;
@@ -71,6 +77,7 @@ struct Arguments {
     std::int32_t intoContainer = 0;
     std::int32_t fromContainer = 0;
     bool sneaking = false;
+    bool grounded = false;
     std::string commandsDump;
     bool ok = true;
 };
@@ -142,6 +149,9 @@ struct Arguments {
         } else if (flag == "--sneak") {
             parsed.sneaking = true;
             i++;
+        } else if (flag == "--grounded") {
+            parsed.grounded = true;
+            i++;
         } else if (flag == "--bedrock") {
             parsed.bedrock = true;
             // Nobody writing --bedrock means the Java port, so the default moves with the flag.
@@ -171,6 +181,24 @@ struct Arguments {
             i += 2;
         } else if (flag == "--use") {
             parsed.useCount = numberOf<std::int32_t>(next).value_or(parsed.useCount);
+            i += 2;
+        } else if (flag == "--place") {
+            parsed.placeAt = std::string{next};
+            i += 2;
+        } else if (flag == "--place-count") {
+            parsed.placeCount = numberOf<std::int32_t>(next).value_or(parsed.placeCount);
+            i += 2;
+        } else if (flag == "--place-face") {
+            parsed.placeFace = numberOf<std::int32_t>(next).value_or(parsed.placeFace);
+            i += 2;
+        } else if (flag == "--interact") {
+            parsed.interactType = numberOf<std::int32_t>(next);
+            i += 2;
+        } else if (flag == "--interact-count") {
+            parsed.interactCount = numberOf<std::int32_t>(next).value_or(parsed.interactCount);
+            i += 2;
+        } else if (flag == "--interact-every") {
+            parsed.interactEveryMillis = numberOf<std::int32_t>(next).value_or(parsed.interactEveryMillis);
             i += 2;
         } else if (flag == "--use-every") {
             parsed.useEveryMillis = numberOf<std::int32_t>(next).value_or(parsed.useEveryMillis);
@@ -251,6 +279,7 @@ int main(int argc, char** argv) {
             options.stashSlots = parsed.stashSlots;
             options.takeSlots = parsed.takeSlots;
             options.sneaking = parsed.sneaking;
+            options.grounded = parsed.grounded;
             options.intoContainer = parsed.intoContainer;
             options.fromContainer = parsed.fromContainer;
             options.say = say;
@@ -275,6 +304,12 @@ int main(int argc, char** argv) {
         options.profile = parsed.profile;
         options.say = say;
         options.commandsDump = parsed.commandsDump;
+        options.placeAt = parsed.placeAt;
+        options.placeCount = parsed.placeCount;
+        options.placeFace = parsed.placeFace;
+        options.interactType = parsed.interactType;
+        options.interactCount = parsed.interactCount;
+        options.interactEveryMillis = parsed.interactEveryMillis;
         if (static_cast<std::size_t>(id - 1) < targets.size()) {
             options.target = targets[static_cast<std::size_t>(id - 1)];
         }

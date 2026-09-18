@@ -45,6 +45,14 @@ struct ProtocolProfile {
         /// for that version, and then a bot counts no entities rather than counting the wrong
         /// packet: the id moves almost every version, and guessing it reads a chunk as a spawn.
         std::int32_t clientboundAddEntity = -1;
+        /// Where a client uses what it holds against a block face. -1 where this tool has not been
+        /// told the number, and then `--place` refuses instead of sending it blind.
+        std::int32_t serverboundUseItemOn = -1;
+        /// Where a client right-clicks an entity. -1 where this tool has not been told the number,
+        /// and then `--interact` refuses rather than sending a packet the server will read as
+        /// something else: 26.2 split the attack out of this one, so the shape differs by version
+        /// too, not only the number.
+        std::int32_t serverboundInteract = -1;
         /// Where the server says something to everyone. -1 where this tool has not been told the
         /// number, and then a bot hears nothing rather than reading another packet as a sentence.
         /// The numbers come from minecraft-data, which is nobody's server.

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <optional>
 #include <random>
 #include <set>
@@ -35,6 +36,21 @@ public:
         std::function<void(const std::string&)> say;
         /// Where the command tree goes, see `Checks::dumpCommandsTo`.
         std::string commandsDump;
+        /// Where to put what is in hand, as `x,y,z`: the block is placed on the top face of that
+        /// square, which is what a player standing beside it would do. Empty places nothing.
+        std::string placeAt;
+        /// How many blocks to place, one per go, each on top of the last.
+        std::int32_t placeCount = 1;
+        /// Which face of that square to use, in the protocol's own order: 0 down, 1 up, 2 north,
+        /// 3 south, 4 west, 5 east. A side face is what hangs a painting or a torch.
+        std::int32_t placeFace = 1;
+        /// The entity type to right-click, as the protocol numbers them. Unset clicks nothing.
+        std::optional<std::int32_t> interactType;
+        /// How many times to click one, one entity per click.
+        std::int32_t interactCount = 1;
+        /// How long to wait between clicks, and before the first one: a bot that clicks on its
+        /// first tick in the world clicks before whoever is driving it has set anything up.
+        std::int32_t interactEveryMillis = 1000;
     };
 
     explicit Bot(Options options);
@@ -76,6 +92,12 @@ private:
     /// A tick of the walk: wander, jump, fall, and tell the server where that left it.
     void tickPhysics();
 
+    /// Right-clicks the nearest entity of the asked-for type, once per tick at most.
+    void tickInteract();
+
+    /// Puts what is in hand on the square that was asked for, one block per go.
+    void tickPlace();
+
     /// Takes complete frames out of `incoming_` and handles them. False ends the connection.
     [[nodiscard]] bool drainFrames();
 
@@ -84,6 +106,24 @@ private:
     Checks checks_;
     /// The entity ids of the other players this bot has been shown, so each is said once.
     std::set<std::int32_t> entitiesSeen_;
+
+    /// Where each entity was when the server announced it. A bot is not told about movement, so a
+    /// wandering animal drifts away from what is written here: `--interact` is for penned ones.
+    struct SeenEntity {
+        std::int32_t type = 0;
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
+
+    std::map<std::int32_t, SeenEntity> entities_;
+    std::int32_t interactsSent_ = 0;
+    std::int64_t nextInteractAt_ = 0;
+    std::int32_t placesSent_ = 0;
+    std::int64_t nextPlaceAt_ = 0;
+    /// What the next block change this bot asks for is numbered. parity: the client's own counter,
+    /// which the server echoes back in its acknowledgement.
+    std::int32_t sequence_ = 0;
     /// Every line the server said to this bot, in order.
     std::vector<std::string> heard_;
     ProtocolState state_ = ProtocolState::Login;

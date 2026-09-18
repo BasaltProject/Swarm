@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <numbers>
 
@@ -26,6 +27,9 @@ constexpr double kJumpVelocity = 0.42;
 constexpr double kGroundSpeed = 0.15;
 constexpr double kAirSpeed = 0.02;
 
+/// How far a server lets a player reach an entity, which is what a click beyond is refused for.
+constexpr double kInteractReach = 3.0;
+
 /// The floor a bot bounces off when it has nothing else. Without it a bot that spawned over a hole
 /// falls out of the world for the rest of the run.
 constexpr double kFloor = 63.0;
@@ -36,6 +40,18 @@ constexpr double kFloor = 63.0;
     framed.writeBytes(body);
     const std::span<const std::uint8_t> bytes = framed.bytes();
     return {bytes.begin(), bytes.end()};
+}
+
+/// A point written as three numbers with commas between them.
+[[nodiscard]] std::array<std::int32_t, 3> pointOf(const std::string& text) {
+    std::array<std::int32_t, 3> point{0, 0, 0};
+    std::size_t at = 0;
+    for (std::size_t part = 0; part < 3 && at <= text.size(); ++part) {
+        const std::size_t comma = std::min(text.find(',', at), text.size());
+        point[part] = static_cast<std::int32_t>(std::strtol(text.substr(at, comma - at).c_str(), nullptr, 10));
+        at = comma + 1;
+    }
+    return point;
 }
 
 } // namespace
@@ -268,6 +284,7 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
         if (body.failed()) {
             return true;
         }
+        entities_.insert_or_assign(entityId, SeenEntity{.type = entityType, .x = x, .y = y, .z = z});
         if (entityType == ProtocolProfile::kPlayerEntityType && entitiesSeen_.insert(entityId).second) {
             say(name + " can see another player at " + std::to_string(x) + ", " + std::to_string(y) + ", " +
                 std::to_string(z) + ".");
@@ -368,6 +385,110 @@ void Bot::tickPhysics() {
     static_cast<void>(sendPositionLook());
 }
 
+void Bot::tickPlace() {
+    if (options_.placeAt.empty() || placesSent_ >= options_.placeCount || !positionReceived_) {
+        return;
+    }
+    if (options_.profile.play.serverboundUseItemOn < 0) {
+        say("Bot " + std::to_string(options_.id) + " cannot place on " + options_.profile.label +
+            ": this tool has not been told that version's packet number.");
+        placesSent_ = options_.placeCount;
+        return;
+    }
+    const std::int64_t now =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    if (nextPlaceAt_ == 0) {
+        nextPlaceAt_ = now + options_.interactEveryMillis;
+    }
+    if (now < nextPlaceAt_) {
+        return;
+    }
+    const std::array<std::int32_t, 3> at = pointOf(options_.placeAt);
+    // Each go moves one square up from the last, which is how a tower rises under a player. With a
+    // side face that means climbing the wall rather than stacking on the floor.
+    const std::int64_t packed = ((static_cast<std::int64_t>(at[0]) & 0x3FFFFFF) << 38) |
+                                ((static_cast<std::int64_t>(at[2]) & 0x3FFFFFF) << 12) |
+                                (static_cast<std::int64_t>(at[1] + placesSent_) & 0xFFF);
+    // Where on that face the click lands, which is the middle of the face itself.
+    const std::int32_t face = options_.placeFace;
+    const float cursorX = face == 4 ? 0.0F : (face == 5 ? 1.0F : 0.5F);
+    const float cursorY = face == 0 ? 0.0F : (face == 1 ? 1.0F : 0.5F);
+    const float cursorZ = face == 2 ? 0.0F : (face == 3 ? 1.0F : 0.5F);
+    ByteWriter body;
+    body.writeVarInt(0); // The main hand.
+    body.writeLong(packed);
+    body.writeVarInt(face);
+    body.writeFloat(cursorX);
+    body.writeFloat(cursorY);
+    body.writeFloat(cursorZ);
+    body.writeByte(0); // Not inside the block.
+    body.writeByte(0); // Nothing to do with the world border.
+    body.writeVarInt(++sequence_);
+    if (!sendPacket(options_.profile.play.serverboundUseItemOn, body)) {
+        return;
+    }
+    placesSent_++;
+    nextPlaceAt_ = now + options_.interactEveryMillis;
+    say("Bot " + std::to_string(options_.id) + " used what is in hand on " + std::to_string(at[0]) + "," +
+        std::to_string(at[1] + placesSent_ - 1) + "," + std::to_string(at[2]) + ", " + std::to_string(placesSent_) +
+        " of " + std::to_string(options_.placeCount) + ".");
+}
+
+void Bot::tickInteract() {
+    if (!options_.interactType.has_value() || interactsSent_ >= options_.interactCount || !positionReceived_) {
+        return;
+    }
+    const std::int64_t now =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    if (nextInteractAt_ == 0) {
+        nextInteractAt_ = now + options_.interactEveryMillis;
+    }
+    if (now < nextInteractAt_) {
+        return;
+    }
+    if (options_.profile.play.serverboundInteract < 0) {
+        say("Bot " + std::to_string(options_.id) + " cannot interact on " + options_.profile.label +
+            ": this tool has not been told that version's packet number.");
+        interactsSent_ = options_.interactCount;
+        return;
+    }
+    std::int32_t nearest = -1;
+    double nearestDistance = kInteractReach * kInteractReach;
+    for (const auto& [entityId, seen] : entities_) {
+        if (seen.type != *options_.interactType) {
+            continue;
+        }
+        const double dx = seen.x - x_;
+        const double dy = seen.y - y_;
+        const double dz = seen.z - z_;
+        const double distance = (dx * dx) + (dy * dy) + (dz * dz);
+        if (distance <= nearestDistance) {
+            nearest = entityId;
+            nearestDistance = distance;
+        }
+    }
+    if (nearest < 0) {
+        return;
+    }
+    ByteWriter body;
+    body.writeVarInt(nearest);
+    body.writeVarInt(0);
+    // The click location, as the quantised vector 26.2 uses: a single zero byte is the whole of
+    // "nowhere in particular", which is what a right-click on an animal carries anyway.
+    body.writeByte(0);
+    // Not sneaking: a sneaking click is a different interaction for several blocks and mobs.
+    body.writeByte(0);
+    if (!sendPacket(options_.profile.play.serverboundInteract, body)) {
+        return;
+    }
+    interactsSent_++;
+    nextInteractAt_ = now + options_.interactEveryMillis;
+    say("Bot " + std::to_string(options_.id) + " right-clicked entity " + std::to_string(nearest) + ", " +
+        std::to_string(interactsSent_) + " of " + std::to_string(options_.interactCount) + ".");
+}
+
 bool Bot::drainFrames() {
     while (true) {
         ByteReader header{incoming_};
@@ -451,9 +572,13 @@ void Bot::run() {
         // The walk runs on the clock rather than on how often the socket had something, so a busy
         // server and a quiet one move a bot at the same speed.
         const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-        if (options_.physicsEnabled && state_ == ProtocolState::Play && now >= nextTick) {
+        if (state_ == ProtocolState::Play && now >= nextTick) {
             nextTick = now + std::chrono::milliseconds{kTickMillis};
-            tickPhysics();
+            if (options_.physicsEnabled) {
+                tickPhysics();
+            }
+            tickInteract();
+            tickPlace();
         }
     }
 }

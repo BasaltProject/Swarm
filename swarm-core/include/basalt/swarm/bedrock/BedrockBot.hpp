@@ -52,6 +52,8 @@ public:
         /// Whether this bot crouches, which is what makes a click place against a block instead of
         /// using it.
         bool sneaking = false;
+        /// Whether this bot says it stands on something, which is what a block's `stepOn` waits for.
+        bool grounded = false;
         std::function<void(const std::string&)> say;
     };
 
