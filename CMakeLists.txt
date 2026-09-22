@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 
 # The version the binary is named after. The build number is the CI's run number; a build made
 # anywhere else has none and says so.
-set(SWARM_VERSION_BASE "26.2")
+set(SWARM_VERSION_BASE "26.3")
 if(DEFINED ENV{GITHUB_RUN_NUMBER})
     set(SWARM_VERSION "${SWARM_VERSION_BASE}.$ENV{GITHUB_RUN_NUMBER}")
 else()
