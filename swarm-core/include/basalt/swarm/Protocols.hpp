@@ -30,6 +30,8 @@ struct ProtocolProfile {
     std::int32_t serverboundKeepAlive = 4;
     std::int32_t serverboundFinish = 3;
     std::int32_t serverboundSelectKnownPacks = 7;
+    std::int32_t clientboundResourcePackPush = -1;
+    std::int32_t serverboundResourcePackResponse = -1;
   };
 
   struct PlayIds {
@@ -55,6 +57,10 @@ struct ProtocolProfile {
     /// Where the server says something to everyone. -1 when unknown, and then
     /// a bot hears nothing rather than reading another packet as a sentence.
     std::int32_t clientboundSystemChat = -1;
+    std::int32_t clientboundStartConfiguration = -1;
+    std::int32_t serverboundConfigurationAcknowledged = -1;
+    std::int32_t clientboundResourcePackPush = -1;
+    std::int32_t serverboundResourcePackResponse = -1;
   };
 
   std::int32_t protocol = 0;

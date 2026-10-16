@@ -31,6 +31,10 @@ constexpr std::int32_t kMaxDepth = 512;
 void skipPayload(ByteReader& reader, std::int32_t type, std::int32_t depth);
 
 void skipCount(ByteReader& reader, const std::int32_t count, const std::int32_t elements, const std::int32_t depth) {
+    if (elements == kEnd && count > 0) {
+        reader.skip(reader.remaining() + 1);
+        return;
+    }
     for (std::int32_t i = 0; i < count && !reader.failed(); ++i) {
         if (elements != kEnd) {
             skipPayload(reader, elements, depth + 1);

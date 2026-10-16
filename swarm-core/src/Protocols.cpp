@@ -36,13 +36,19 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                         .label = "26.3",
                         .login = {},
                         .configuration =
-                            Configuration{.clientboundSelectKnownPacks = 15},
+                            Configuration{.clientboundSelectKnownPacks = 15,
+                                          .clientboundResourcePackPush = 9,
+                                          .serverboundResourcePackResponse = 6},
                         .play = Play{.clientboundKeepAlive = 45,
                                      .clientboundPlayerPosition = 73,
                                      .clientboundAddEntity = 1,
                                      .serverboundUseItemOn = 0x42,
                                      .serverboundInteract = 0x1a,
-                                     .clientboundSystemChat = 124},
+                                     .clientboundSystemChat = 124,
+                                     .clientboundStartConfiguration = 0x78,
+                                     .serverboundConfigurationAcknowledged = 0x10,
+                                     .clientboundResourcePackPush = 0x51,
+                                     .serverboundResourcePackResponse = 0x32},
                         .playerEntityType = 159};
   v26_3.acceptCarriesPosition = true;
 

@@ -87,6 +87,10 @@ private:
 
     [[nodiscard]] bool handleConfigurationPacket(std::int32_t packetId, ByteReader& body);
 
+    [[nodiscard]] bool beginConfiguration(ByteReader& body);
+
+    [[nodiscard]] bool declineResourcePack(ByteReader& body, std::int32_t responseId);
+
     [[nodiscard]] bool handlePlayPacket(std::int32_t packetId, ByteReader& body);
 
     /// A tick of the walk: wander, jump, fall, and tell the server where that left it.

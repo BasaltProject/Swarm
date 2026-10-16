@@ -1,9 +1,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <basalt/swarm/Bytes.hpp>
 #include <basalt/swarm/Checks.hpp>
+#include <basalt/swarm/Nbt.hpp>
 
 #include <doctest.h>
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -179,4 +181,11 @@ TEST_CASE("what a version does have is not complained about") {
     ByteReader reader{body.bytes()};
     checks.registryData(reader);
     CHECK(checks.problems() == 0);
+}
+
+TEST_CASE("NBT lists reject a positive count without an element type") {
+    constexpr std::array<std::uint8_t, 6> kMissingType{9, 0, 0, 0, 0, 1};
+    ByteReader reader{kMissingType};
+    basalt::swarm::nbt::skip(reader);
+    CHECK(reader.failed());
 }

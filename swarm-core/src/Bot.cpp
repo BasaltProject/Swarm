@@ -223,6 +223,10 @@ bool Bot::handleLoginPacket(const std::int32_t packetId, ByteReader &body) {
 bool Bot::handleConfigurationPacket(const std::int32_t packetId,
                                     ByteReader &body) {
   const ProtocolProfile &profile = options_.profile;
+    if (profile.configuration.clientboundResourcePackPush >= 0 &&
+        packetId == profile.configuration.clientboundResourcePackPush) {
+        return declineResourcePack(body, profile.configuration.serverboundResourcePackResponse);
+    }
   const std::string name = "Bot " + std::to_string(options_.id);
   if (packetId == profile.configuration.clientboundDisconnect) {
     const std::span<const std::uint8_t> reason = body.rest();
@@ -268,6 +272,13 @@ bool Bot::handleConfigurationPacket(const std::int32_t packetId,
 
 bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader &body) {
   const ProtocolProfile &profile = options_.profile;
+    if (profile.play.clientboundResourcePackPush >= 0 && packetId == profile.play.clientboundResourcePackPush) {
+        return declineResourcePack(body, profile.play.serverboundResourcePackResponse);
+    }
+    if (profile.play.clientboundStartConfiguration >= 0 &&
+        packetId == profile.play.clientboundStartConfiguration) {
+        return beginConfiguration(body);
+    }
   const std::string name = "Bot " + std::to_string(options_.id);
   if (packetId == profile.play.clientboundDisconnect) {
     const std::span<const std::uint8_t> reason = body.rest();
