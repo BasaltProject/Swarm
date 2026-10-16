@@ -127,7 +127,21 @@ bool Bot::sendHandshakeAndLogin() {
   // checks.
   uuid[6] = static_cast<std::uint8_t>((uuid[6] & 0x0F) | 0x40);
   uuid[8] = static_cast<std::uint8_t>((uuid[8] & 0x3F) | 0x80);
-  hello.writeBytes(uuid);
+  // The login start is the name alone until 1.19, gains an optional signature
+  // key in 1.19, an optional uuid from 1.19.1 and a plain uuid in 1.20.2.
+  const std::int32_t protocol = options_.profile.protocol;
+  if (protocol >= 764) {
+    hello.writeBytes(uuid);
+  } else if (protocol >= 761) {
+    hello.writeByte(1);
+    hello.writeBytes(uuid);
+  } else if (protocol >= 759) {
+    hello.writeByte(0);
+    if (protocol >= 760) {
+      hello.writeByte(1);
+      hello.writeBytes(uuid);
+    }
+  }
   if (!sendPacket(options_.profile.login.serverboundHello, hello)) {
     return false;
   }
@@ -195,6 +209,41 @@ bool Bot::handleLoginPacket(const std::int32_t packetId, ByteReader &body) {
     return false;
   }
   if (packetId == profile.login.clientboundFinished) {
+    // Up to 1.15.2 the uuid is text, from 1.16 it is sixteen bytes, and the
+    // property list is there from 1.19; anything else is a server that
+    // answered in a shape this client could not read.
+    const std::int32_t protocol = profile.protocol;
+    bool readable = true;
+    if (protocol < 735) {
+      const std::string id = body.readVarString();
+      readable = !body.failed() && id.size() == 36;
+    } else {
+      for (int i = 0; i < 16; ++i) {
+        static_cast<void>(body.readByte());
+      }
+    }
+    const std::string reported = body.readVarString();
+    readable = readable && !body.failed() && reported.starts_with("Bot_");
+    if (protocol >= 759 && readable) {
+      const std::int32_t properties = body.readVarInt();
+      readable = !body.failed() && properties >= 0;
+      for (std::int32_t i = 0; readable && i < properties; ++i) {
+        static_cast<void>(body.readVarString());
+        static_cast<void>(body.readVarString());
+        if (body.readByte() != 0) {
+          static_cast<void>(body.readVarString());
+        }
+        readable = !body.failed();
+      }
+    }
+    // What follows the profile: nothing, a strict-errors flag in 1.20.5 to 1.21.1,
+    // the session id from 26.2.
+    const std::size_t tail = protocol >= 776 ? 16 : (protocol == 766 || protocol == 767 ? 1 : 0);
+    readable = readable && body.remaining() == tail;
+    if (!readable) {
+      say(name + " could not read the Login Success it was sent");
+      return false;
+    }
     static_cast<void>(body.rest());
     if (!profile.hasConfigurationPhase) {
       // Before 1.20.2 there is nothing to acknowledge: the game has already
