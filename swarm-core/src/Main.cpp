@@ -305,6 +305,7 @@ int main(int argc, char** argv) {
         options.say = say;
         options.commandsDump = parsed.commandsDump;
         options.placeAt = parsed.placeAt;
+        options.commandLine = parsed.commandLine;
         options.placeCount = parsed.placeCount;
         options.placeFace = parsed.placeFace;
         options.interactType = parsed.interactType;

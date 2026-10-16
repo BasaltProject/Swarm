@@ -45,6 +45,7 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                      .serverboundUseItemOn = 0x42,
                                      .serverboundInteract = 0x1a,
                                      .clientboundSystemChat = 124,
+                                     .serverboundChatCommand = 7,
                                      .clientboundStartConfiguration = 0x78,
                                      .serverboundConfigurationAcknowledged = 0x10,
                                      .clientboundResourcePackPush = 0x51,
@@ -61,7 +62,10 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                               .play = Play{.clientboundAddEntity = 1,
                                            .serverboundUseItemOn = 0x42,
                                            .serverboundInteract = 0x1a,
-                                           .clientboundSystemChat = 121}};
+                                           .clientboundSystemChat = 121,
+                                           .serverboundChatCommand = 7,
+                                           .clientboundStartConfiguration = 118,
+                                           .serverboundConfigurationAcknowledged = 16}};
   const ProtocolProfile v26_1 = like(v26_2, 775, "26.1");
 
   // 1.21.11 moved the play ids down by one, and nothing a bot sends changed
@@ -75,7 +79,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                               .clientboundDisconnect = 32,
                                               .serverboundKeepAlive = 27,
                                               .serverboundMovePosRot = 30,
-                                              .clientboundSystemChat = 119}};
+                                              .clientboundSystemChat = 119,
+                                              .clientboundStartConfiguration = 116,
+                                              .serverboundConfigurationAcknowledged = 15}};
   const ProtocolProfile v1_21_10 = like(v1_21_11, 773, "1.21.10");
 
   // Before 1.21.9's five new debug packets, so the play ids sit lower again.
@@ -88,7 +94,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                              .clientboundDisconnect = 28,
                                              .serverboundKeepAlive = 27,
                                              .serverboundMovePosRot = 30,
-                                             .clientboundSystemChat = 114}};
+                                             .clientboundSystemChat = 114,
+                                             .clientboundStartConfiguration = 111,
+                                             .serverboundConfigurationAcknowledged = 15}};
   const ProtocolProfile v1_21_6 = like(v1_21_8, 771, "1.21.6");
 
   // 1.21.6 added the dialog packets, so before it the serverbound play ids are
@@ -102,7 +110,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                              .clientboundDisconnect = 28,
                                              .serverboundKeepAlive = 26,
                                              .serverboundMovePosRot = 29,
-                                             .clientboundSystemChat = 114}};
+                                             .clientboundSystemChat = 114,
+                                             .clientboundStartConfiguration = 111,
+                                             .serverboundConfigurationAcknowledged = 14}};
 
   // 1.21.5 added the test-instance packets, so before it the play ids sit one
   // lower again.
@@ -115,7 +125,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                              .clientboundDisconnect = 29,
                                              .serverboundKeepAlive = 26,
                                              .serverboundMovePosRot = 29,
-                                             .clientboundSystemChat = 115}};
+                                             .clientboundSystemChat = 115,
+                                             .clientboundStartConfiguration = 112,
+                                             .serverboundConfigurationAcknowledged = 14}};
 
   // 1.21.2 and 1.21.3 share their numbering with 1.21.4.
   const ProtocolProfile v1_21_3 = like(v1_21_4, 768, "1.21.3");
@@ -131,7 +143,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                      .clientboundDisconnect = 29,
                                      .serverboundKeepAlive = 24,
                                      .serverboundMovePosRot = 27,
-                                     .clientboundSystemChat = 108}};
+                                     .clientboundSystemChat = 108,
+                                     .clientboundStartConfiguration = 105,
+                                     .serverboundConfigurationAcknowledged = 12}};
   v1_21.settingsHaveParticleStatus = false;
   v1_21.positionStartsWithTeleportId = false;
 
@@ -157,7 +171,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                        .clientboundDisconnect = 27,
                                        .serverboundKeepAlive = 21,
                                        .serverboundMovePosRot = 24,
-                                       .clientboundSystemChat = 105}};
+                                       .clientboundSystemChat = 105,
+                                       .clientboundStartConfiguration = 103,
+                                       .serverboundConfigurationAcknowledged = 11}};
   v1_20_4.settingsHaveParticleStatus = false;
   v1_20_4.positionStartsWithTeleportId = false;
 
@@ -167,7 +183,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                             .clientboundPlayerPosition = 62,
                                             .clientboundDisconnect = 27,
                                             .serverboundKeepAlive = 20,
-                                            .serverboundMovePosRot = 23});
+                                            .serverboundMovePosRot = 23,
+                                            .clientboundStartConfiguration = 101,
+                                            .serverboundConfigurationAcknowledged = 11});
 
   // 1.20 and 1.20.1: no configuration phase, and the settings are a play
   // packet.

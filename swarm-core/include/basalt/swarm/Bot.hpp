@@ -39,6 +39,8 @@ public:
         /// Where to put what is in hand, as `x,y,z`: the block is placed on the top face of that
         /// square, which is what a player standing beside it would do. Empty places nothing.
         std::string placeAt;
+        /// A command to type once, right after the first position sync, without its slash. Empty types nothing.
+        std::string commandLine;
         /// How many blocks to place, one per go, each on top of the last.
         std::int32_t placeCount = 1;
         /// Which face of that square to use, in the protocol's own order: 0 down, 1 up, 2 north,
@@ -73,6 +75,7 @@ private:
     [[nodiscard]] bool sendPacket(std::int32_t packetId, const ByteWriter& body);
 
     [[nodiscard]] bool sendEmpty(std::int32_t packetId);
+    bool commandSent_ = false;
 
     [[nodiscard]] bool sendHandshakeAndLogin();
 
