@@ -620,6 +620,36 @@ void BedrockBot::handle(const Packet packet, ByteReader &reader) {
     }
     return;
   }
+  case Packet::SetDisplayObjective: {
+    const std::string slot = readString(reader);
+    const std::string objective = readString(reader);
+    const std::string title = readString(reader);
+    if (!reader.failed()) {
+      say("scoreboard " + slot + " shows " + objective + " titled " + title);
+    }
+    return;
+  }
+  case Packet::SetScore: {
+    say("scoreboard lines of " + std::to_string(reader.remaining()) +
+        " byte(s)");
+    return;
+  }
+  case Packet::RemoveObjective: {
+    const std::string objective = readString(reader);
+    if (!reader.failed()) {
+      say("scoreboard " + objective + " is gone");
+    }
+    return;
+  }
+  case Packet::BossEvent: {
+    static_cast<void>(readVarLong(reader));
+    const std::uint8_t action = reader.readByte();
+    const std::string title = readString(reader);
+    if (!reader.failed()) {
+      say("boss bar action " + std::to_string(action) + " titled " + title);
+    }
+    return;
+  }
   case Packet::AddEntity: {
     static_cast<void>(readVarLong(reader));
     const std::uint64_t runtime = readVarULong(reader);
@@ -1502,11 +1532,14 @@ void BedrockBot::sendChat(const std::string &line) {
 void BedrockBot::sendAuthInput() {
   // One block action or one click, the first time round and never again: what
   // is being tested is that the server reads them, not that a bot can mine.
-  const bool dig = !options_.digAt.empty() && !digSent_;
+  // A proxy may still be joining the player to a backend, so the first clicks wait a few seconds.
+  const bool settled = tick_ > 20;
+  const bool dig = settled && !options_.digAt.empty() && !digSent_;
   // A click on nothing, the way a rod is cast and reeled in.
-  const bool use = usesSent_ < options_.useCount && nowMillis() >= nextUseAt_;
-  const bool put = (!options_.putAt.empty() && !putSent_) || use;
+  const bool use = settled && usesSent_ < options_.useCount && nowMillis() >= nextUseAt_;
+  const bool put = (settled && !options_.putAt.empty() && !putSent_) || use;
   const bool swap =
+      settled &&
       (!options_.swapSlots.empty() || !options_.stashSlots.empty() ||
        !options_.takeSlots.empty()) &&
       !swapSent_;
@@ -1550,7 +1583,9 @@ void BedrockBot::sendAuthInput() {
   writeFloatLE(body, 0.0F); // Head yaw.
   // Which flags are on, which is what says the pieces below are there at all.
   if (options_.protocol >= 2168) {
-    body.writeByte(1);
+    if (options_.protocol < 2193) {
+      body.writeByte(1);
+    }
     writeVarUInt(body, static_cast<std::uint32_t>(
                            (dig ? 1 : 0) + (put ? 1 : 0) + (swap ? 1 : 0) +
                            (options_.sneaking ? 1 : 0) +
@@ -1602,21 +1637,27 @@ void BedrockBot::sendAuthInput() {
   // The five optional pieces. From 2168 each is a pair of booleans, the first
   // saying the field is there at all; below it they are not written, and a flag
   // alone decides.
-  const auto optional = [this, &body](const bool present) {
+  const bool native = options_.protocol >= 2168;
+  // From 2193 each optional piece is a single boolean.
+  const bool single = options_.protocol >= 2193;
+  const auto optional = [this, &body, single](const bool present) {
     if (options_.protocol >= 2168) {
-      body.writeByte(1);
+      if (!single) {
+        body.writeByte(1);
+      }
       body.writeByte(present ? 1 : 0);
       return present;
     }
     return present;
   };
-  const bool native = options_.protocol >= 2168;
   if (optional(put)) {
     writeVarInt(body, 0); // No legacy request,
     if (native) {
       body.writeByte(0); // no slots left over from one,
-      body.writeByte(1); // and a list of moves that is there
-      body.writeByte(1);
+      if (!single) {
+        body.writeByte(1); // and a list of moves that is there
+        body.writeByte(1);
+      }
     }
     writeVarUInt(body, 0); // but empty.
     // A click on a block, or on nothing, set off by a hand rather than by the
@@ -1638,6 +1679,9 @@ void BedrockBot::sendAuthInput() {
       writeVarInt(body, 1);
     }
     writeVarInt(body, 0); // with what is in the first slot.
+    if (single) {
+      body.writeByte(0); // in the main hand.
+    }
     // What is in hand, which for this bot is the first item the server named:
     // enough for the server to see an id it gave out come back. From 2168 the
     // id is a short.
