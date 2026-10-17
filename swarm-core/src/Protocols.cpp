@@ -299,6 +299,7 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                             .serverboundKeepAlive = 15,
                                             .serverboundMovePosRot = 18});
   const ProtocolProfile v1_14_3 = like(v1_14_4, 490, "1.14.3");
+  const ProtocolProfile v1_14_2 = like(v1_14_4, 485, "1.14.2");
   const ProtocolProfile v1_14_1 = like(v1_14_4, 480, "1.14.1");
   const ProtocolProfile v1_14 = like(v1_14_4, 477, "1.14");
 
@@ -362,7 +363,7 @@ using Configuration = ProtocolProfile::ConfigurationIds;
           v1_21_5, v1_21_4, v1_21_3, v1_21,    v1_20_6,  v1_20_4, v1_20_2,
           v1_20_1, v1_19_4, v1_19_3, v1_19_2,  v1_19,    v1_18_2, v1_18_1,
           v1_17_1, v1_17,   v1_16_5, v1_16_3,  v1_16_2,  v1_16_1, v1_16,
-          v1_15_2, v1_15_1, v1_15,   v1_14_4,  v1_14_3,  v1_14_1, v1_14,
+          v1_15_2, v1_15_1, v1_15,   v1_14_4,  v1_14_3,  v1_14_2, v1_14_1, v1_14,
           v1_13_2, v1_13_1, v1_13,   v1_12_2,  v1_12_1,  v1_12,   v1_11_2,
           v1_11,   v1_10_2, v1_9_4,  v1_9_2,   v1_9,     v1_8};
 }

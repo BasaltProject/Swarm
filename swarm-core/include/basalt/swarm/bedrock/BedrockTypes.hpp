@@ -287,6 +287,8 @@ enum class Packet : std::uint16_t {
     StartGame = 11,
     LevelEvent = 25,
     AddPlayer = 12,
+    AddEntity = 13,
+    AddItemEntity = 15,
     RemoveEntity = 14,
     MoveEntityAbsolute = 18,
     UpdateAttributes = 29,
