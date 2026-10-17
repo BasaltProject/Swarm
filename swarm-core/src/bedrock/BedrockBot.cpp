@@ -1,3 +1,4 @@
+#include <sstream>
 #include <basalt/swarm/Zlib.hpp>
 #include <basalt/swarm/bedrock/BedrockBot.hpp>
 
@@ -1542,7 +1543,7 @@ void BedrockBot::sendAuthInput() {
       settled &&
       (!options_.swapSlots.empty() || !options_.stashSlots.empty() ||
        !options_.takeSlots.empty()) &&
-      !swapSent_;
+      !swapSent_ && (options_.putAt.empty() || openContainer_ >= 0);
   // Which windows the two ends are in: the carried 36, or whatever block is
   // open. A block's window is the 7 unless it is a cooker, which gives each of
   // its three slots a container of its own: --from and --into say which.
@@ -1909,7 +1910,10 @@ void BedrockBot::run() {
     sendChat(options_.chatLine);
   }
   if (spawned_ && !options_.commandLine.empty()) {
-    sendCommand(options_.commandLine);
+    std::stringstream commands{options_.commandLine};
+    for (std::string one; std::getline(commands, one, ';');) {
+      sendCommand(one);
+    }
   }
   if (spawned_ && options_.stayMillis > 0) {
     const std::int64_t leaveAt = nowMillis() + options_.stayMillis;
