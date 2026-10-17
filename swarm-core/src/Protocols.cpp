@@ -343,6 +343,7 @@ using Configuration = ProtocolProfile::ConfigurationIds;
   const ProtocolProfile v1_10_2 = like(v1_11_2, 210, "1.10.2");
   const ProtocolProfile v1_9_4 = like(v1_11_2, 110, "1.9.4");
   const ProtocolProfile v1_9_2 = like(v1_11_2, 109, "1.9.2");
+  const ProtocolProfile v1_9_1 = like(v1_11_2, 108, "1.9.1");
   const ProtocolProfile v1_9 = like(v1_11_2, 107, "1.9");
 
   // 1.8, where a position is not acknowledged and a client has one hand.
@@ -365,7 +366,7 @@ using Configuration = ProtocolProfile::ConfigurationIds;
           v1_17_1, v1_17,   v1_16_5, v1_16_3,  v1_16_2,  v1_16_1, v1_16,
           v1_15_2, v1_15_1, v1_15,   v1_14_4,  v1_14_3,  v1_14_2, v1_14_1, v1_14,
           v1_13_2, v1_13_1, v1_13,   v1_12_2,  v1_12_1,  v1_12,   v1_11_2,
-          v1_11,   v1_10_2, v1_9_4,  v1_9_2,   v1_9,     v1_8};
+          v1_11,   v1_10_2, v1_9_4,  v1_9_2,   v1_9_1,   v1_9,     v1_8};
 }
 
 } // namespace

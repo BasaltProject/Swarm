@@ -288,6 +288,12 @@ bool Bot::handleConfigurationPacket(const std::int32_t packetId,
     answer.writeBytes(body.rest());
     return sendPacket(profile.configuration.serverboundKeepAlive, answer);
   }
+  // A server that waits for the client to catch up, as Fabric API does, sends a ping and holds the join until the pong.
+  if (packetId == profile.configuration.clientboundPing) {
+    ByteWriter answer;
+    answer.writeBytes(body.rest());
+    return sendPacket(profile.configuration.serverboundPong, answer);
+  }
   if (packetId == profile.configuration.clientboundFinish) {
     static_cast<void>(body.rest());
     if (!sendEmpty(profile.configuration.serverboundFinish)) {

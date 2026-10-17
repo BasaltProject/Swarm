@@ -22,6 +22,8 @@ struct ProtocolProfile {
   struct ConfigurationIds {
     std::int32_t clientboundDisconnect = 2;
     std::int32_t clientboundKeepAlive = 4;
+    std::int32_t clientboundPing = 5;
+    std::int32_t serverboundPong = 5;
     std::int32_t clientboundFinish = 3;
     /// -1 where the version has no such packet, which is everything
     /// before 1.20.5.
