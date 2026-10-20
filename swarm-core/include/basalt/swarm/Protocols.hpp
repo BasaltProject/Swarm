@@ -66,6 +66,10 @@ struct ProtocolProfile {
         std::int32_t serverboundConfigurationAcknowledged = -1;
         std::int32_t clientboundResourcePackPush = -1;
         std::int32_t serverboundResourcePackResponse = -1;
+        /// Where the server shows a dialog and where a client answers a
+        /// `dynamic/custom` button; -1 where unknown.
+        std::int32_t clientboundShowDialog = -1;
+        std::int32_t serverboundCustomClickAction = -1;
     };
 
     std::int32_t protocol = 0;

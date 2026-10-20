@@ -44,6 +44,9 @@ public:
         /// A command to type once, right after the first position sync, without its
         /// slash. Empty types nothing.
         std::string commandLine;
+        /// Which button of a dialog the server shows this bot presses, from zero;
+        /// none by default.
+        std::optional<std::int32_t> answerDialog;
         /// How many blocks to place, one per go, each on top of the last.
         std::int32_t placeCount = 1;
         /// Which face of that square to use, in the protocol's own order: 0 down, 1

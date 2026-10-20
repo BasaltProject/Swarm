@@ -1915,6 +1915,17 @@ void BedrockBot::run() {
     writeVarULong(initialised, runtimeEntityId_);
     send(Packet::SetLocalPlayerAsInitialized, initialised.bytes());
     sendAuthInput();
+    if (options_.hotbarSlot >= 0 && !hotbarSent_) {
+      hotbarSent_ = true;
+      ByteWriter held;
+      writeVarULong(held, runtimeEntityId_);
+      for (const std::uint8_t empty : {0, 0, 0, 0, 0, 0, 0, 0})
+        held.writeByte(empty);
+      held.writeByte(static_cast<std::uint8_t>(options_.hotbarSlot));
+      held.writeByte(static_cast<std::uint8_t>(options_.hotbarSlot));
+      held.writeByte(0);
+      send(Packet::MobEquipment, held.bytes());
+    }
   }
   if (spawned_ && !options_.chatLine.empty()) {
     sendChat(options_.chatLine);

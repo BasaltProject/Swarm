@@ -4,6 +4,7 @@ add_library(swarm-core STATIC
     src/BotResourcePacks.cpp
     src/Bytes.cpp
     src/Checks.cpp
+    src/Dialogs.cpp
     src/KnownVersions.cpp
     src/KnownVersionsData.cpp
     src/Nbt.cpp

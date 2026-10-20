@@ -58,6 +58,7 @@ public:
         /// Whether this bot crouches, which is what makes a click place against a
         /// block instead of using it.
         bool sneaking = false;
+        std::int32_t hotbarSlot = -1;
         /// Whether this bot says it stands on something, which is what a block's
         /// `stepOn` waits for.
         bool grounded = false;
@@ -150,6 +151,7 @@ private:
     bool compression_ = false;
     bool running_ = true;
     bool spawned_ = false;
+    bool hotbarSent_ = false;
     bool refused_ = false;
     std::int32_t problems_ = 0;
     std::map<std::uint16_t, std::int32_t> counts_;

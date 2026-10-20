@@ -64,6 +64,7 @@ struct Arguments {
     std::vector<std::int32_t> bedrockProtocols{bedrock::kBedrockProtocol};
     std::string chatLine;
     std::string commandLine;
+    std::optional<std::int32_t> answerDialog;
     std::int32_t useCount = 0;
     std::string placeAt;
     std::int32_t placeCount = 1;
@@ -80,6 +81,7 @@ struct Arguments {
     std::int32_t intoContainer = 0;
     std::int32_t fromContainer = 0;
     bool sneaking = false;
+    std::int32_t hotbarSlot = -1;
     bool grounded = false;
     std::string commandsDump;
     bool ok = true;
@@ -148,6 +150,9 @@ struct Arguments {
             i += 2;
         } else if (flag == "--from") {
             parsed.fromContainer = numberOf<std::int32_t>(next).value_or(0);
+            i += 2;
+        } else if (flag == "--hotbar") {
+            parsed.hotbarSlot = numberOf<std::int32_t>(next).value_or(-1);
             i += 2;
         } else if (flag == "--sneak") {
             parsed.sneaking = true;
@@ -222,6 +227,9 @@ struct Arguments {
         } else if (flag == "--run") {
             parsed.commandLine = std::string{next};
             i += 2;
+        } else if (flag == "--answer-dialog") {
+            parsed.answerDialog = numberOf<std::int32_t>(next);
+            i += 2;
         } else if (flag == "--stay") {
             parsed.stayMillis = numberOf<std::int32_t>(next).value_or(parsed.stayMillis);
             i += 2;
@@ -284,6 +292,7 @@ int main(int argc, char** argv) {
             options.stashSlots = parsed.stashSlots;
             options.takeSlots = parsed.takeSlots;
             options.sneaking = parsed.sneaking;
+            options.hotbarSlot = parsed.hotbarSlot;
             options.grounded = parsed.grounded;
             options.intoContainer = parsed.intoContainer;
             options.fromContainer = parsed.fromContainer;
@@ -311,6 +320,7 @@ int main(int argc, char** argv) {
         options.commandsDump = parsed.commandsDump;
         options.placeAt = parsed.placeAt;
         options.commandLine = parsed.commandLine;
+        options.answerDialog = parsed.answerDialog;
         options.placeCount = parsed.placeCount;
         options.placeFace = parsed.placeFace;
         options.interactType = parsed.interactType;

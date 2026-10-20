@@ -45,7 +45,9 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                                        .clientboundStartConfiguration = 0x78,
                                        .serverboundConfigurationAcknowledged = 0x10,
                                        .clientboundResourcePackPush = 0x51,
-                                       .serverboundResourcePackResponse = 0x32},
+                                       .serverboundResourcePackResponse = 0x32,
+                                       .clientboundShowDialog = 0x8f,
+                                       .serverboundCustomClickAction = 0x44},
                           .playerEntityType = 159};
     v26_3.acceptCarriesPosition = true;
 

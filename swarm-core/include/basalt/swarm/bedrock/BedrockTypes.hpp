@@ -329,6 +329,7 @@ enum class Packet : std::uint16_t {
     Respawn = 45,
     AvailableCommands = 76,
     DeathInfo = 189,
+    MobEquipment = 31,
     PlayerList = 63,
     NetworkChunkPublisherUpdate = 121,
     NetworkSettings = 143,

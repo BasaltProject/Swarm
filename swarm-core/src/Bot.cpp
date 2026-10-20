@@ -1,4 +1,5 @@
 #include <basalt/swarm/Bot.hpp>
+#include <basalt/swarm/Dialogs.hpp>
 #include <basalt/swarm/Nbt.hpp>
 #include <basalt/swarm/Zlib.hpp>
 
@@ -319,6 +320,24 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
         return beginConfiguration(body);
     }
     const std::string name = "Bot " + std::to_string(options_.id);
+    if (profile.play.clientboundShowDialog >= 0 && packetId == profile.play.clientboundShowDialog) {
+        say(name + " was shown a dialog.");
+        if (options_.answerDialog.has_value() && profile.play.serverboundCustomClickAction >= 0) {
+            const std::optional<dialogs::Click> click = dialogs::answer(body, *options_.answerDialog);
+            if (!click.has_value()) {
+                say(name + " could not read a button " + std::to_string(*options_.answerDialog) + " in that dialog.");
+                return true;
+            }
+            ByteWriter answer;
+            answer.writeVarString(click->id);
+            answer.writeVarInt(static_cast<std::int32_t>(click->payload.size()));
+            answer.writeBytes(click->payload);
+            say(name + " pressed button " + std::to_string(*options_.answerDialog) + " (" + click->id + ").");
+            return sendPacket(profile.play.serverboundCustomClickAction, answer);
+        }
+        static_cast<void>(body.rest());
+        return true;
+    }
     if (packetId == profile.play.clientboundDisconnect) {
         const std::span<const std::uint8_t> reason = body.rest();
         say(name + " was kicked. Reason: " + std::string{reason.begin(), reason.end()});
