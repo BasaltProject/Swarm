@@ -8,8 +8,9 @@
 
 namespace basalt::swarm::bedrock {
 
-/// The Bedrock protocol this bot claims by default. A server that speaks another answers with the
-/// number it wants instead of letting the bot in, and that is a thing worth testing too.
+/// The Bedrock protocol this bot claims by default. A server that speaks
+/// another answers with the number it wants instead of letting the bot in, and
+/// that is a thing worth testing too.
 inline constexpr int kBedrockProtocol = 2168;
 
 inline constexpr std::string_view kBedrockVersion = "1.26.40";
@@ -159,21 +160,24 @@ inline void writeString(ByteWriter& writer, std::string_view value) {
     return text;
 }
 
-/// Protocol 2168 rewrote the skin, the player list and the two resource pack packets. A bot that
-/// claims anything older in the window reads and writes the shape underneath.
+/// Protocol 2168 rewrote the skin, the player list and the two resource pack
+/// packets. A bot that claims anything older in the window reads and writes the
+/// shape underneath.
 [[nodiscard]] inline bool nativeShapes(const int protocol) { return protocol >= kBedrockProtocol; }
 
-/// A network NBT tag, skipped rather than read: a bot only needs to get past it. Bedrock writes its
-/// NBT little endian with varint lengths, and the only one a server sends here is empty.
+/// A network NBT tag, skipped rather than read: a bot only needs to get past
+/// it. Bedrock writes its NBT little endian with varint lengths, and the only
+/// one a server sends here is empty.
 inline void skipTag(ByteReader& reader) {
     const std::uint8_t kind = reader.readByte();
     if (kind != 0x0a) {
-        return; // Not a compound, and nothing else is expected where this is called.
+        return; // Not a compound, and nothing else is expected where this is
+                // called.
     }
     reader.skip(readVarUInt(reader)); // Its name, which is never given one.
     while (!reader.failed() && reader.readByte() != 0x00) {
-        // A field this bot cannot read means the rest of the packet is unreadable too, and the
-        // caller finds that out when it runs off the end.
+        // A field this bot cannot read means the rest of the packet is unreadable
+        // too, and the caller finds that out when it runs off the end.
         return;
     }
 }

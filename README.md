@@ -27,7 +27,7 @@ Like the rest of the Basalt Project, it is written entirely in **C++23** and dis
 
 It speaks **both editions**: Java from 1.8 to 26.3, and Bedrock with `--bedrock`.
 
-It speaks **more than one version**, from 1.8 to 26.3. A bot claims whatever version `--version` asks for, which is how a server that translates older clients gets tested: the same swarm can arrive as 26.3, as 26.2, or as a number nobody has released yet. See [Versions](docs/versions.md) for what is supported and how a version is added.
+It speaks **more than one version**, from 1.8 to 26.3. A bot claims whatever version `--version` asks for, which is how a server that translates older clients gets tested: the same swarm can arrive as 26.3, as 26.2, or as a number nobody has released yet. Version support is defined by `ProtocolProfile` in the source tree.
 
 ## Building
 

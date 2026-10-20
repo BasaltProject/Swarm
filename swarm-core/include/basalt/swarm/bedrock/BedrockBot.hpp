@@ -14,9 +14,9 @@
 
 namespace basalt::swarm::bedrock {
 
-/// One Bedrock bot: the RakNet session, the login, and the walk to the world. A second
-/// implementation on purpose, like the Java bot: nothing is shared with the server it points at, so
-/// the two cannot agree on the same mistake.
+/// One Bedrock bot: the RakNet session, the login, and the walk to the world. A
+/// second implementation on purpose, like the Java bot: nothing is shared with
+/// the server it points at, so the two cannot agree on the same mistake.
 class BedrockBot {
 public:
     struct Options {
@@ -29,30 +29,37 @@ public:
         std::int32_t stayMillis = 5000;
         /// What the bot says in chat once it is in, or nothing to stay quiet.
         std::string chatLine;
-        /// A command the bot runs once it is in, without its slash, or nothing to run none.
+        /// A command the bot runs once it is in, without its slash, or nothing to
+        /// run none.
         std::string commandLine;
         /// A block to break once it is in, as x,y,z, or nothing to break none.
         std::string digAt;
-        /// A block to click with what is in hand, as x,y,z, or nothing to click none.
+        /// A block to click with what is in hand, as x,y,z, or nothing to click
+        /// none.
         std::string putAt;
-        /// How many times to use what is in hand on nothing, and how long apart, in milliseconds.
+        /// How many times to use what is in hand on nothing, and how long apart, in
+        /// milliseconds.
         std::int32_t useCount = 0;
         std::int32_t useEveryMillis = 3000;
-        /// Two slots of the carried 36 to trade places, as a,b, or a,b,n to carry n of them
-        /// through the cursor. Nothing moves none.
+        /// Two slots of the carried 36 to trade places, as a,b, or a,b,n to carry n
+        /// of them through the cursor. Nothing moves none.
         std::string swapSlots;
-        /// The same, but the second slot is in the block whose window is open: a,b,n.
+        /// The same, but the second slot is in the block whose window is open:
+        /// a,b,n.
         std::string stashSlots;
-        /// The other way round: a,b,n takes from the open block's slot a into carried slot b.
+        /// The other way round: a,b,n takes from the open block's slot a into
+        /// carried slot b.
         std::string takeSlots;
-        /// Which window the two ends of a --stash or a --take are in, when it is not the block's
-        /// own 7: a cooker numbers its three slots as three containers.
+        /// Which window the two ends of a --stash or a --take are in, when it is
+        /// not the block's own 7: a cooker numbers its three slots as three
+        /// containers.
         std::int32_t intoContainer = 0;
         std::int32_t fromContainer = 0;
-        /// Whether this bot crouches, which is what makes a click place against a block instead of
-        /// using it.
+        /// Whether this bot crouches, which is what makes a click place against a
+        /// block instead of using it.
         bool sneaking = false;
-        /// Whether this bot says it stands on something, which is what a block's `stepOn` waits for.
+        /// Whether this bot says it stands on something, which is what a block's
+        /// `stepOn` waits for.
         bool grounded = false;
         std::function<void(const std::string&)> say;
     };
@@ -74,8 +81,9 @@ public:
     /// what was missing.
     [[nodiscard]] const std::map<std::uint16_t, std::int32_t>& counts() const noexcept { return counts_; }
 
-    /// Everybody else the server said is here, and everybody else it drew. A server that presents
-    /// nobody is a server nobody can play on together, which is worth reporting on its own.
+    /// Everybody else the server said is here, and everybody else it drew. A
+    /// server that presents nobody is a server nobody can play on together, which
+    /// is worth reporting on its own.
     [[nodiscard]] const std::map<std::string, std::string>& listed() const noexcept { return listed_; }
 
     [[nodiscard]] const std::map<std::uint64_t, std::string>& seen() const noexcept { return seen_; }
@@ -89,10 +97,12 @@ public:
     /// How many mob effects the server started, changed or took away.
     [[nodiscard]] std::int32_t effects() const noexcept { return effects_; }
 
-    /// How many times the server said this bot, or somebody beside it, had been hit.
+    /// How many times the server said this bot, or somebody beside it, had been
+    /// hit.
     [[nodiscard]] std::int32_t hits() const noexcept { return hits_; }
 
-    /// How many item names the server declared, which is the palette a window is read against.
+    /// How many item names the server declared, which is the palette a window is
+    /// read against.
     [[nodiscard]] std::int32_t itemNames() const noexcept { return itemNames_; }
 
     /// How many stacks the server put in this bot's windows.
@@ -101,14 +111,16 @@ public:
     /// How many single blocks the server said had changed.
     [[nodiscard]] std::int32_t blockChanges() const noexcept { return blockChanges_; }
 
-    /// How many columns arrived with any blocks in them at all, as opposed to holes.
+    /// How many columns arrived with any blocks in them at all, as opposed to
+    /// holes.
     [[nodiscard]] std::int32_t columnsWithBlocks() const noexcept { return columnsWithBlocks_; }
 
     /// Whether this bot was shown a death screen at any point.
     [[nodiscard]] bool died() const noexcept { return died_; }
 
-    /// Every command the server said this client may type. A Bedrock client will not send what is
-    /// not in here, so an empty set is a client that can run nothing.
+    /// Every command the server said this client may type. A Bedrock client will
+    /// not send what is not in here, so an empty set is a client that can run
+    /// nothing.
     [[nodiscard]] const std::set<std::string>& offered() const noexcept { return offered_; }
 
     /// The last value of every attribute the server sent for this bot itself.
@@ -122,7 +134,8 @@ private:
     [[nodiscard]] bool pump(std::int32_t millis);
     void handle(Packet packet, ByteReader& reader);
     void sendLogin();
-    /// What this client answers a resource pack question with, in the shape its protocol reads.
+    /// What this client answers a resource pack question with, in the shape its
+    /// protocol reads.
     void sendPackResponse(std::uint8_t status, const std::string& name);
 
     void sendChat(const std::string& line);
@@ -147,7 +160,8 @@ private:
     float z_ = 0.0F;
     std::uint64_t tick_ = 0;
 
-    /// The one block action or click still to send, which goes out with the next input.
+    /// The one block action or click still to send, which goes out with the next
+    /// input.
     bool digSent_ = false;
     bool putSent_ = false;
     std::int32_t usesSent_ = 0;
@@ -155,7 +169,8 @@ private:
     bool swapSent_ = false;
     /// The window this bot has open, or -1 when it has none.
     std::int32_t openContainer_ = -1;
-    /// Which request number the next one gets. A client counts its own and the answer names it.
+    /// Which request number the next one gets. A client counts its own and the
+    /// answer names it.
     std::int32_t requestId_ = 0;
     /// Who the server listed, by uuid, and who it actually drew, by entity id.
     std::map<std::string, std::string> listed_;

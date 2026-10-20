@@ -17,13 +17,14 @@ using namespace basalt::swarm;
 
 namespace {
 
-/// One lock around standard output: a hundred bots writing at once otherwise interleave mid-word.
+/// One lock around standard output: a hundred bots writing at once otherwise
+/// interleave mid-word.
 std::mutex sayLock;
 
 void say(const std::string& line) {
     const std::lock_guard<std::mutex> guard(sayLock);
-    // Flushed rather than left to the buffer: a run's whole output is progress, and piped into a
-    // file it otherwise says nothing until the swarm ends.
+    // Flushed rather than left to the buffer: a run's whole output is progress,
+    // and piped into a file it otherwise says nothing until the swarm ends.
     std::cout << line << std::endl;
 }
 
@@ -52,12 +53,14 @@ struct Arguments {
     bool physicsEnabled = false;
     double spread = 0.0;
     ProtocolProfile profile = protocols::newest();
-    /// Which edition the swarm arrives on. Bedrock is another protocol on another transport, so it
-    /// is a different bot and not another profile of the same one.
+    /// Which edition the swarm arrives on. Bedrock is another protocol on another
+    /// transport, so it is a different bot and not another profile of the same
+    /// one.
     bool bedrock = false;
     std::int32_t stayMillis = 5000;
-    /// Which Bedrock protocols the bots claim, dealt out one per bot in turn. More than one is how
-    /// a single run puts several versions on a server at the same time.
+    /// Which Bedrock protocols the bots claim, dealt out one per bot in turn.
+    /// More than one is how a single run puts several versions on a server at the
+    /// same time.
     std::vector<std::int32_t> bedrockProtocols{bedrock::kBedrockProtocol};
     std::string chatLine;
     std::string commandLine;
@@ -121,8 +124,8 @@ struct Arguments {
             if (const std::optional<ProtocolProfile> found = protocols::find(next); found.has_value()) {
                 parsed.profile = *found;
             } else if (const std::optional<std::int32_t> number = numberOf<std::int32_t>(next); number.has_value()) {
-                // A bare number this tool has no ids for is still worth claiming: it is how a
-                // server's answer to an unknown version gets tested.
+                // A bare number this tool has no ids for is still worth claiming: it is
+                // how a server's answer to an unknown version gets tested.
                 parsed.profile = protocols::pretend(*number);
                 say("No packet ids for protocol " + std::to_string(*number) + ": past the handshake this speaks " +
                     std::string{protocols::newest().label} + ".");
@@ -154,7 +157,8 @@ struct Arguments {
             i++;
         } else if (flag == "--bedrock") {
             parsed.bedrock = true;
-            // Nobody writing --bedrock means the Java port, so the default moves with the flag.
+            // Nobody writing --bedrock means the Java port, so the default moves with
+            // the flag.
             if (parsed.port == 25565) {
                 parsed.port = 19132;
             }
@@ -228,8 +232,9 @@ struct Arguments {
             parsed.spread = doubleOf(next).value_or(parsed.spread);
             i += 2;
         } else {
-            // A flag nobody reads is worse than one nobody wrote: a typo in a switch silently
-            // tested the default instead of what was asked for, twice, before this said so.
+            // A flag nobody reads is worse than one nobody wrote: a typo in a switch
+            // silently tested the default instead of what was asked for, twice,
+            // before this said so.
             say("Unknown option: " + std::string{flag});
             parsed.ok = false;
             return parsed;
@@ -319,6 +324,7 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(std::chrono::milliseconds{parsed.delayMillis});
         }
     }
-    // Every bot is joined by its own destructor: the swarm ends when the last one is disconnected.
+    // Every bot is joined by its own destructor: the swarm ends when the last one
+    // is disconnected.
     return 0;
 }

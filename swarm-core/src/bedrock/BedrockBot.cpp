@@ -1,6 +1,6 @@
-#include <sstream>
 #include <basalt/swarm/Zlib.hpp>
 #include <basalt/swarm/bedrock/BedrockBot.hpp>
+#include <sstream>
 
 #include <chrono>
 #include <utility>
@@ -783,9 +783,17 @@ void BedrockBot::handle(const Packet packet, ByteReader &reader) {
     if (nativeShapes(options_.protocol)) {
       static_cast<void>(readVarUInt(reader)); // How many times it loops.
     }
+    if (options_.protocol >= 2193) {
+      static_cast<void>(reader.readByte()); // Whether it plays back.
+    }
     if (options_.protocol >= 975) {
-      static_cast<void>(
-          reader.readByte()); // Whether the server named a sound of its own.
+      if (reader.readByte() !=
+          0) { // Whether the server named a sound of its own,
+        static_cast<void>(readLongLE(reader));
+      }
+    }
+    if (options_.protocol >= 2193) {
+      static_cast<void>(reader.readByte());
     }
     if (reader.failed()) {
       problem("a sound arrived with a body that ran out");
@@ -1533,11 +1541,13 @@ void BedrockBot::sendChat(const std::string &line) {
 void BedrockBot::sendAuthInput() {
   // One block action or one click, the first time round and never again: what
   // is being tested is that the server reads them, not that a bot can mine.
-  // A proxy may still be joining the player to a backend, so the first clicks wait a few seconds.
+  // A proxy may still be joining the player to a backend, so the first clicks
+  // wait a few seconds.
   const bool settled = tick_ > 20;
   const bool dig = settled && !options_.digAt.empty() && !digSent_;
   // A click on nothing, the way a rod is cast and reeled in.
-  const bool use = settled && usesSent_ < options_.useCount && nowMillis() >= nextUseAt_;
+  const bool use =
+      settled && usesSent_ < options_.useCount && nowMillis() >= nextUseAt_;
   const bool put = (settled && !options_.putAt.empty() && !putSent_) || use;
   const bool swap =
       settled &&
