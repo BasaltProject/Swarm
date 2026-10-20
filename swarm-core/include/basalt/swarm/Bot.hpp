@@ -47,6 +47,7 @@ public:
         /// Which button of a dialog the server shows this bot presses, from zero;
         /// none by default.
         std::optional<std::int32_t> answerDialog;
+        std::vector<std::pair<std::int32_t, std::vector<std::uint8_t>>> rawPackets;
         /// How many blocks to place, one per go, each on top of the last.
         std::int32_t placeCount = 1;
         /// Which face of that square to use, in the protocol's own order: 0 down, 1
@@ -87,6 +88,7 @@ private:
 
     [[nodiscard]] bool sendEmpty(std::int32_t packetId);
     bool commandSent_ = false;
+    bool rawSent_ = false;
 
     [[nodiscard]] bool sendHandshakeAndLogin();
 

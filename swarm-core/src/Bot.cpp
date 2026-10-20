@@ -428,6 +428,16 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
                 return false;
             }
         }
+        if (!rawSent_ && !options_.rawPackets.empty()) {
+            rawSent_ = true;
+            for (const auto& [id, bytes] : options_.rawPackets) {
+                ByteWriter raw;
+                raw.writeBytes(bytes);
+                if (!sendPacket(id, raw)) {
+                    return false;
+                }
+            }
+        }
         // Every sync puts the bot back on the spawn, so the target is claimed again
         // after each one or the swarm quietly collapses into a single spot.
         if (options_.target.has_value()) {

@@ -65,6 +65,7 @@ struct Arguments {
     std::string chatLine;
     std::string commandLine;
     std::optional<std::int32_t> answerDialog;
+    std::vector<std::pair<std::int32_t, std::vector<std::uint8_t>>> rawPackets;
     std::int32_t useCount = 0;
     std::string placeAt;
     std::int32_t placeCount = 1;
@@ -227,6 +228,19 @@ struct Arguments {
         } else if (flag == "--run") {
             parsed.commandLine = std::string{next};
             i += 2;
+        } else if (flag == "--send") {
+            // <id>:<hex bytes>, the id in decimal or 0x hex.
+            const std::size_t colon = next.find(':');
+            if (colon != std::string_view::npos) {
+                const std::string idText{next.substr(0, colon)};
+                std::vector<std::uint8_t> bytes;
+                for (std::size_t at = colon + 1; at + 1 < next.size() + 1 && at + 2 <= next.size(); at += 2) {
+                    bytes.push_back(static_cast<std::uint8_t>(std::stoi(std::string{next.substr(at, 2)}, nullptr, 16)));
+                }
+                parsed.rawPackets.emplace_back(static_cast<std::int32_t>(std::stol(idText, nullptr, 0)),
+                                               std::move(bytes));
+            }
+            i += 2;
         } else if (flag == "--answer-dialog") {
             parsed.answerDialog = numberOf<std::int32_t>(next);
             i += 2;
@@ -321,6 +335,7 @@ int main(int argc, char** argv) {
         options.placeAt = parsed.placeAt;
         options.commandLine = parsed.commandLine;
         options.answerDialog = parsed.answerDialog;
+        options.rawPackets = parsed.rawPackets;
         options.placeCount = parsed.placeCount;
         options.placeFace = parsed.placeFace;
         options.interactType = parsed.interactType;
