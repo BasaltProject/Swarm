@@ -157,6 +157,8 @@ using Configuration = ProtocolProfile::ConfigurationIds;
                             .login = {},
                             .configuration = Configuration{.clientboundDisconnect = 1,
                                                            .clientboundKeepAlive = 3,
+                                                           .clientboundPing = 4,
+                                                           .serverboundPong = 4,
                                                            .clientboundFinish = 2,
                                                            .clientboundSelectKnownPacks = -1,
                                                            .serverboundClientInformation = 0,
