@@ -64,6 +64,10 @@ struct Arguments {
     std::vector<std::int32_t> bedrockProtocols{bedrock::kBedrockProtocol};
     std::string chatLine;
     std::string commandLine;
+    std::vector<std::string> moreCommands;
+    std::int32_t commandEveryMillis = 1500;
+    std::optional<std::pair<std::array<std::int32_t, 3>, std::array<std::int32_t, 3>>> watchBox;
+    std::int32_t leaveAfterMillis = 0;
     std::optional<std::int32_t> answerDialog;
     std::vector<std::pair<std::int32_t, std::vector<std::uint8_t>>> rawPackets;
     std::int32_t useCount = 0;
@@ -226,7 +230,36 @@ struct Arguments {
             parsed.takeSlots = std::string{next};
             i += 2;
         } else if (flag == "--run") {
-            parsed.commandLine = std::string{next};
+            if (parsed.commandLine.empty()) {
+                parsed.commandLine = std::string{next};
+            } else {
+                parsed.moreCommands.emplace_back(next);
+            }
+            i += 2;
+        } else if (flag == "--run-every") {
+            parsed.commandEveryMillis = numberOf<std::int32_t>(next).value_or(parsed.commandEveryMillis);
+            i += 2;
+        } else if (flag == "--leave-after") {
+            parsed.leaveAfterMillis = numberOf<std::int32_t>(next).value_or(0);
+            i += 2;
+        } else if (flag == "--watch") {
+            // x,y,z or x1,y1,z1,x2,y2,z2: the blocks whose state the bot reports.
+            std::vector<std::int32_t> numbers;
+            for (std::size_t at = 0; at <= next.size();) {
+                const std::size_t comma = std::min(next.find(',', at), next.size());
+                numbers.push_back(numberOf<std::int32_t>(next.substr(at, comma - at)).value_or(0));
+                at = comma + 1;
+            }
+            if (numbers.size() == 3) {
+                numbers.insert(numbers.end(), numbers.begin(), numbers.end());
+            }
+            if (numbers.size() == 6) {
+                parsed.watchBox = std::pair{
+                    std::array<std::int32_t, 3>{std::min(numbers[0], numbers[3]), std::min(numbers[1], numbers[4]),
+                                                std::min(numbers[2], numbers[5])},
+                    std::array<std::int32_t, 3>{std::max(numbers[0], numbers[3]), std::max(numbers[1], numbers[4]),
+                                                std::max(numbers[2], numbers[5])}};
+            }
             i += 2;
         } else if (flag == "--send") {
             // <id>:<hex bytes>, the id in decimal or 0x hex.
@@ -334,6 +367,10 @@ int main(int argc, char** argv) {
         options.commandsDump = parsed.commandsDump;
         options.placeAt = parsed.placeAt;
         options.commandLine = parsed.commandLine;
+        options.moreCommands = parsed.moreCommands;
+        options.commandEveryMillis = parsed.commandEveryMillis;
+        options.watchBox = parsed.watchBox;
+        options.leaveAfterMillis = parsed.leaveAfterMillis;
         options.answerDialog = parsed.answerDialog;
         options.rawPackets = parsed.rawPackets;
         options.placeCount = parsed.placeCount;

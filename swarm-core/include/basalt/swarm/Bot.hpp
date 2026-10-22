@@ -1,5 +1,6 @@
 #pragma once
 
+#include <basalt/swarm/BlockWatch.hpp>
 #include <basalt/swarm/Bytes.hpp>
 #include <basalt/swarm/Checks.hpp>
 #include <basalt/swarm/Protocols.hpp>
@@ -44,6 +45,13 @@ public:
         /// A command to type once, right after the first position sync, without its
         /// slash. Empty types nothing.
         std::string commandLine;
+        /// Commands typed after that one, each this many milliseconds after the last, without their slash.
+        std::vector<std::string> moreCommands;
+        std::int32_t commandEveryMillis = 1500;
+        /// A box of blocks (`x,y,z` to `x,y,z`) whose state the bot reports as the server shows it.
+        std::optional<std::pair<std::array<std::int32_t, 3>, std::array<std::int32_t, 3>>> watchBox;
+        /// The bot leaves this long after its first position sync. Zero stays until stopped.
+        std::int32_t leaveAfterMillis = 0;
         /// Which button of a dialog the server shows this bot presses, from zero;
         /// none by default.
         std::optional<std::int32_t> answerDialog;
@@ -88,6 +96,11 @@ private:
 
     [[nodiscard]] bool sendEmpty(std::int32_t packetId);
     bool commandSent_ = false;
+    std::size_t nextCommand_ = 0;
+    std::int64_t nextCommandAt_ = 0;
+    std::int64_t joinedAt_ = 0;
+    std::optional<BlockWatch> watch_;
+    void tickCommands();
     bool rawSent_ = false;
 
     [[nodiscard]] bool sendHandshakeAndLogin();

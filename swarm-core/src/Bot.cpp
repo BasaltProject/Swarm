@@ -66,6 +66,9 @@ Bot::Bot(Options options)
               [this](const std::string& what) { say("Bot " + std::to_string(options_.id) + ": " + what); }),
       random_(std::random_device{}()) {
     checks_.dumpCommandsTo(options_.commandsDump);
+    if (options_.watchBox.has_value()) {
+        watch_.emplace(options_.watchBox->first, options_.watchBox->second);
+    }
 }
 
 void Bot::say(const std::string& line) const {
@@ -420,8 +423,14 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
                 return false;
             }
         }
+        if (joinedAt_ == 0) {
+            joinedAt_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+        }
         if (!options_.commandLine.empty() && !commandSent_ && profile.play.serverboundChatCommand >= 0) {
             commandSent_ = true;
+            nextCommandAt_ = joinedAt_ + options_.commandEveryMillis;
             ByteWriter command;
             command.writeVarString(options_.commandLine);
             if (!sendPacket(profile.play.serverboundChatCommand, command)) {
@@ -456,8 +465,43 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
         checks_.updateRecipes(body);
         return true;
     }
+    if (watch_.has_value() && profile.protocol == 777) {
+        // Packet ids of 26.3: level chunk with light, block update, section update.
+        bool touched = false;
+        if (packetId == 0x2e) {
+            touched = watch_->chunk(body);
+        } else if (packetId == 0x08) {
+            touched = watch_->blockUpdate(body);
+        } else if (packetId == 0x56) {
+            touched = watch_->sectionUpdate(body);
+        }
+        if (touched) {
+            say("Bot " + std::to_string(options_.id) + " watch: " + watch_->summary());
+        }
+    }
     static_cast<void>(body.rest());
     return true;
+}
+
+void Bot::tickCommands() {
+    if (nextCommand_ >= options_.moreCommands.size() || nextCommandAt_ == 0 ||
+        options_.profile.play.serverboundChatCommand < 0) {
+        return;
+    }
+    const std::int64_t now =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    if (now < nextCommandAt_) {
+        return;
+    }
+    ByteWriter command;
+    command.writeVarString(options_.moreCommands[nextCommand_]);
+    say("Bot " + std::to_string(options_.id) + " runs: " + options_.moreCommands[nextCommand_]);
+    ++nextCommand_;
+    nextCommandAt_ = now + options_.commandEveryMillis;
+    if (!sendPacket(options_.profile.play.serverboundChatCommand, command)) {
+        running_ = false;
+    }
 }
 
 void Bot::tickPhysics() {
@@ -700,6 +744,13 @@ void Bot::run() {
             }
             tickInteract();
             tickPlace();
+            tickCommands();
+            if (options_.leaveAfterMillis > 0 && joinedAt_ != 0 &&
+                std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() - joinedAt_ >=
+                    options_.leaveAfterMillis) {
+                say("Bot " + std::to_string(options_.id) + " leaves.");
+                running_ = false;
+            }
         }
     }
 }

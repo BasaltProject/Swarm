@@ -1,5 +1,6 @@
 add_library(swarm-core STATIC
     src/Bot.cpp
+    src/BlockWatch.cpp
     src/BotReconfiguration.cpp
     src/BotResourcePacks.cpp
     src/Bytes.cpp
