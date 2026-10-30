@@ -34,7 +34,7 @@ It speaks **both editions**: Java from 1.8 to 26.3, and Bedrock with `--bedrock`
 
 A Java bot claims whatever version `--version` asks for, which is how a server that translates older clients gets
 tested: the same swarm can arrive as 26.3, as 26.2, or as a number nobody has released yet. Version support is defined
-by `ProtocolProfile` in the source tree and listed in [docs/versions.md](docs/versions.md).
+by `ProtocolProfile` in the source tree.
 
 ## Building
 
