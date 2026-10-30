@@ -32,7 +32,9 @@ Like the rest of the Basalt Project, it is written entirely in **C++23** and dis
 
 It speaks **both editions**: Java from 1.8 to 26.3, and Bedrock with `--bedrock`.
 
-It speaks **more than one version**, from 1.8 to 26.3. A bot claims whatever version `--version` asks for, which is how a server that translates older clients gets tested: the same swarm can arrive as 26.3, as 26.2, or as a number nobody has released yet. Version support is defined by `ProtocolProfile` in the source tree.
+A Java bot claims whatever version `--version` asks for, which is how a server that translates older clients gets
+tested: the same swarm can arrive as 26.3, as 26.2, or as a number nobody has released yet. Version support is defined
+by `ProtocolProfile` in the source tree and listed in [docs/versions.md](docs/versions.md).
 
 ## Building
 
@@ -77,10 +79,19 @@ You can run the generated native binary directly from your terminal. Swarm provi
 - `--bedrock` (default: disabled): The bots arrive as Bedrock clients instead of Java ones: RakNet, the key exchange and the encrypted stream, all the way to spawning. The default port moves to `19132` with the flag, and `--version`, `--physics` and `--spread` do not apply to them yet.
 - `--stay <ms>` (default: `5000`): How long a Bedrock bot stays once it has spawned.
 - `--answer-dialog <button>` (default: none): A Java bot that is shown a dialog presses that button (from zero) and answers with the initial value of every input, the way the game answers a `dynamic/custom` action. Only for versions whose packet ids this tool knows (26.3 so far).
-- `--run <command>` (default: none): A command a Bedrock bot runs once it is in, without its slash. What the server answers arrives as chat, so `--run list` is a round trip through the server's own dispatcher.
 - `--grounded` (default: disabled): A Bedrock bot says it is standing on the ground, which is what a block that reacts to being walked on waits for.
 - `--use <n>` (default: `0`): A Bedrock bot uses what is in its hand on nothing that many times, the way a rod is cast and then reeled in. `--use-every <ms>` (default: `3000`) sets how long apart.
-- `--bedrock-protocol <number>` (default: the one this build speaks): Which Bedrock protocol the bots claim. A server that turns them away for it is doing its job; one that turns away the very protocol it advertises in its own server list is not, and that is reported as a problem.
+- `--bedrock-protocol <number[,number...]>` (default: the one this build speaks): Which Bedrock protocol the bots claim; several are dealt out one per bot in turn. A server that turns them away for it is doing its job; one that turns away the very protocol it advertises in its own server list is not, and that is reported as a problem.
+- `--run <command>` (default: none): A command a bot runs without its slash: a Bedrock bot once it is in, a Java bot right after its first position sync. What the server answers arrives as chat, so `--run list` is a round trip through the server's own dispatcher. On Java, repeat the flag to type several in a row, `--run-every <ms>` (default: `1500`) apart. A Bedrock bot runs only the first command.
+- `--say <text>` (default: none): A Bedrock bot says this in chat once it is in.
+- `--leave-after <ms>` (default: stay until stopped): A Java bot leaves that long after its first position sync.
+- `--watch <x,y,z[,x,y,z]>` (default: none): A Java bot reports the state of one block, or of a box between two corners, as the server shows it.
+- `--place <x,y,z>` (default: none): A Java bot places what is in hand on the top face of that square. `--place-count <n>` (default: `1`) stacks that many blocks, and `--place-face <0-5>` (default: `1`, up) picks the face: 0 down, 1 up, 2 north, 3 south, 4 west, 5 east.
+- `--interact <entity type>` (default: none): A Java bot right-clicks an entity of that type (the protocol's numbering). `--interact-count <n>` (default: `1`) sets how many clicks and `--interact-every <ms>` (default: `1000`) how long apart, and before the first.
+- `--send <id>:<hex bytes>` (default: none): A Java bot sends one raw game packet with that id (decimal or `0x` hex). Repeatable.
+- `--dump-commands <path>` (default: none): A Java bot writes the command tree the server sends to that file.
+- `--dig <x,y,z>`, `--put <x,y,z>` (default: none): A Bedrock bot breaks the block at that position, or clicks it with what is in hand. `--sneak` makes the bot crouch, so a click places against a block instead of using it, and `--hotbar <slot>` picks the held slot.
+- `--swap <a,b[,n]>`, `--stash <a,b,n>`, `--take <a,b,n>` (default: none): A Bedrock bot moves items: `--swap` trades two of its carried slots, `--stash` moves from a carried slot into the open block's slot, and `--take` the other way round. `--into <window>` and `--from <window>` pick the container window when it is not the block's own.
 - `--spread <blocks>` (default: disabled): Spreads the bots over a square grid centred on the spawn, that many blocks between neighbours. Without it every bot stands on the spawn, which only ever loads one area of the world. Each bot claims its cell again after every position sync the server sends.
 
 ### Examples
