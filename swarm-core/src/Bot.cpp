@@ -167,6 +167,14 @@ bool Bot::sendClientInformation() {
     return sendPacket(id, settings);
 }
 
+bool Bot::sendBrand() {
+    constexpr std::int32_t kConfigurationCustomPayload = 2;
+    ByteWriter payload;
+    payload.writeVarString("minecraft:brand");
+    payload.writeVarString("vanilla");
+    return sendPacket(kConfigurationCustomPayload, payload);
+}
+
 bool Bot::sendPositionLook() {
     ByteWriter body;
     body.writeDouble(x_);
@@ -247,7 +255,7 @@ bool Bot::handleLoginPacket(const std::int32_t packetId, ByteReader& body) {
             return false;
         }
         state_ = ProtocolState::Configuration;
-        return sendClientInformation();
+        return sendClientInformation() && sendBrand();
     }
     if (packetId == profile.login.clientboundCompression) {
         compressionThreshold_ = body.readVarInt();

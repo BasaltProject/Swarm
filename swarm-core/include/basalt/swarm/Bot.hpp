@@ -114,6 +114,7 @@ private:
     [[nodiscard]] bool sendHandshakeAndLogin();
 
     [[nodiscard]] bool sendClientInformation();
+    [[nodiscard]] bool sendBrand();
 
     [[nodiscard]] bool sendPositionLook();
 
