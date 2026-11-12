@@ -70,6 +70,17 @@ struct ProtocolProfile {
         /// `dynamic/custom` button; -1 where unknown.
         std::int32_t clientboundShowDialog = -1;
         std::int32_t serverboundCustomClickAction = -1;
+        /// What a client must answer or send to count as a live player; -1 where unknown.
+        std::int32_t clientboundPing = -1;
+        std::int32_t serverboundPong = -1;
+        std::int32_t clientboundChunkBatchFinished = -1;
+        std::int32_t serverboundChunkBatchReceived = -1;
+        std::int32_t serverboundChat = -1;
+        std::int32_t serverboundClientTickEnd = -1;
+        std::int32_t serverboundPlayerLoaded = -1;
+        /// A dead player is treated as removed by the server until it asks to respawn.
+        std::int32_t clientboundSetHealth = -1;
+        std::int32_t serverboundClientCommand = -1;
     };
 
     std::int32_t protocol = 0;

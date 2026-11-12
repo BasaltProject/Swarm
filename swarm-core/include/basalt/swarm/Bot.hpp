@@ -18,6 +18,12 @@
 
 namespace basalt::swarm {
 
+/// One line of a script: wait `delayMillis` after the previous one (or the first position sync), then type `text`.
+struct ScriptStep {
+    std::int64_t delayMillis = 0;
+    std::string text;
+};
+
 enum class ProtocolState : std::uint8_t { Login, Configuration, Play };
 
 /// One bot: a socket, the state machine that gets it into the world, and the
@@ -44,12 +50,8 @@ public:
         /// face of that square, which is what a player standing beside it would do.
         /// Empty places nothing.
         std::string placeAt;
-        /// A command to type once, right after the first position sync, without its
-        /// slash. Empty types nothing.
-        std::string commandLine;
-        /// Commands typed after that one, each this many milliseconds after the last, without their slash.
-        std::vector<std::string> moreCommands;
-        std::int32_t commandEveryMillis = 1500;
+        /// What to type once in the world, in order: a line starting with a slash is a command, anything else is chat.
+        std::vector<ScriptStep> steps;
         /// A box of blocks (`x,y,z` to `x,y,z`) whose state the bot reports as the server shows it.
         std::optional<std::pair<std::array<std::int32_t, 3>, std::array<std::int32_t, 3>>> watchBox;
         /// The bot leaves this long after its first position sync. Zero stays until stopped.
@@ -97,12 +99,16 @@ private:
     [[nodiscard]] bool sendPacket(std::int32_t packetId, const ByteWriter& body);
 
     [[nodiscard]] bool sendEmpty(std::int32_t packetId);
-    bool commandSent_ = false;
-    std::size_t nextCommand_ = 0;
-    std::int64_t nextCommandAt_ = 0;
+    bool loadedSent_ = false;
+    bool dead_ = false;
+    std::size_t nextStep_ = 0;
+    std::int64_t nextStepAt_ = 0;
     std::int64_t joinedAt_ = 0;
     std::optional<BlockWatch> watch_;
-    void tickCommands();
+    void tickSteps();
+
+    /// What a client sends at the end of each of its ticks.
+    void tickClientTickEnd();
     bool rawSent_ = false;
 
     [[nodiscard]] bool sendHandshakeAndLogin();

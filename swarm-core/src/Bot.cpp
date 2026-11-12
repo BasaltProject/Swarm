@@ -34,6 +34,8 @@ constexpr double kAirSpeed = 0.02;
 /// is refused for.
 constexpr double kInteractReach = 3.0;
 
+constexpr float kChunksPerTick = 20.0F;
+
 [[nodiscard]] std::vector<std::uint8_t> withVarInt(const std::int32_t value, const std::span<const std::uint8_t> body) {
     ByteWriter framed;
     framed.writeVarInt(value);
@@ -347,6 +349,33 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
         answer.writeBytes(body.rest());
         return sendPacket(profile.play.serverboundKeepAlive, answer);
     }
+    if (profile.play.clientboundPing >= 0 && packetId == profile.play.clientboundPing) {
+        ByteWriter answer;
+        answer.writeBytes(body.rest());
+        return sendPacket(profile.play.serverboundPong, answer);
+    }
+    if (profile.play.clientboundChunkBatchFinished >= 0 && packetId == profile.play.clientboundChunkBatchFinished) {
+        static_cast<void>(body.rest());
+        ByteWriter received;
+        received.writeFloat(kChunksPerTick);
+        return sendPacket(profile.play.serverboundChunkBatchReceived, received);
+    }
+    if (profile.play.clientboundSetHealth >= 0 && packetId == profile.play.clientboundSetHealth) {
+        const float health = body.readFloat();
+        static_cast<void>(body.rest());
+        if (health > 0.0F) {
+            dead_ = false;
+            return true;
+        }
+        if (dead_ || profile.play.serverboundClientCommand < 0) {
+            return true;
+        }
+        dead_ = true;
+        say(name + " died, respawning.");
+        ByteWriter respawn;
+        respawn.writeVarInt(0);
+        return sendPacket(profile.play.serverboundClientCommand, respawn);
+    }
     if (profile.play.clientboundSystemChat >= 0 && packetId == profile.play.clientboundSystemChat) {
         // What the server says to everyone: chat, a death, somebody arriving.
         // Since 1.20.3 the sentence travels as a tag, so it is read as one rather
@@ -424,14 +453,14 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
                             std::chrono::steady_clock::now().time_since_epoch())
                             .count();
         }
-        if (!options_.commandLine.empty() && !commandSent_ && profile.play.serverboundChatCommand >= 0) {
-            commandSent_ = true;
-            nextCommandAt_ = joinedAt_ + options_.commandEveryMillis;
-            ByteWriter command;
-            command.writeVarString(options_.commandLine);
-            if (!sendPacket(profile.play.serverboundChatCommand, command)) {
+        if (!loadedSent_ && profile.play.serverboundPlayerLoaded >= 0) {
+            loadedSent_ = true;
+            if (!sendEmpty(profile.play.serverboundPlayerLoaded)) {
                 return false;
             }
+        }
+        if (!options_.steps.empty() && nextStepAt_ == 0) {
+            nextStepAt_ = joinedAt_ + options_.steps.front().delayMillis;
         }
         if (!rawSent_ && !options_.rawPackets.empty()) {
             rawSent_ = true;
@@ -479,24 +508,54 @@ bool Bot::handlePlayPacket(const std::int32_t packetId, ByteReader& body) {
     return true;
 }
 
-void Bot::tickCommands() {
-    if (nextCommand_ >= options_.moreCommands.size() || nextCommandAt_ == 0 ||
-        options_.profile.play.serverboundChatCommand < 0) {
+void Bot::tickSteps() {
+    if (nextStep_ >= options_.steps.size() || nextStepAt_ == 0) {
         return;
     }
     const std::int64_t now =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
             .count();
-    if (now < nextCommandAt_) {
+    if (now < nextStepAt_) {
         return;
     }
-    ByteWriter command;
-    command.writeVarString(options_.moreCommands[nextCommand_]);
-    say("Bot " + std::to_string(options_.id) + " runs: " + options_.moreCommands[nextCommand_]);
-    ++nextCommand_;
-    nextCommandAt_ = now + options_.commandEveryMillis;
-    if (!sendPacket(options_.profile.play.serverboundChatCommand, command)) {
+    const std::string& text = options_.steps[nextStep_].text;
+    const bool isCommand = text.starts_with('/');
+    const ProtocolProfile::PlayIds& play = options_.profile.play;
+    const std::int32_t id = isCommand ? play.serverboundChatCommand : play.serverboundChat;
+    ByteWriter packet;
+    if (isCommand) {
+        packet.writeVarString(text.substr(1));
+    } else {
+        packet.writeVarString(text);
+        packet.writeLong(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
+        packet.writeLong(0);
+        packet.writeByte(0); // No signature.
+        packet.writeVarInt(0);
+        packet.writeByte(0);
+        packet.writeByte(0);
+        packet.writeByte(0);
+        packet.writeByte(0); // Checksum 0 is "ignore".
+    }
+    say("Bot " + std::to_string(options_.id) + (isCommand ? " runs: " : " says: ") + text);
+    ++nextStep_;
+    if (nextStep_ < options_.steps.size()) {
+        nextStepAt_ = now + options_.steps[nextStep_].delayMillis;
+    }
+    if (id < 0) {
+        say("Bot " + std::to_string(options_.id) + " cannot send that on " + options_.profile.label +
+            ": this tool has not been told that version's packet number.");
+        return;
+    }
+    if (!sendPacket(id, packet)) {
         running_ = false;
+    }
+}
+
+void Bot::tickClientTickEnd() {
+    if (options_.profile.play.serverboundClientTickEnd >= 0 && positionReceived_) {
+        static_cast<void>(sendEmpty(options_.profile.play.serverboundClientTickEnd));
     }
 }
 
@@ -735,12 +794,13 @@ void Bot::run() {
         const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
         if (state_ == ProtocolState::Play && now >= nextTick) {
             nextTick = now + std::chrono::milliseconds{kTickMillis};
+            tickClientTickEnd();
             if (options_.physicsEnabled) {
                 tickPhysics();
             }
             tickInteract();
             tickPlace();
-            tickCommands();
+            tickSteps();
             if (options_.leaveAfterMillis > 0 && joinedAt_ != 0 &&
                 std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() - joinedAt_ >=
                     options_.leaveAfterMillis) {

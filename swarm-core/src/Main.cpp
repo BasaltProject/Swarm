@@ -6,6 +6,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -65,7 +66,7 @@ struct Arguments {
     std::vector<std::int32_t> bedrockProtocols{bedrock::kBedrockProtocol};
     std::string chatLine;
     std::string commandLine;
-    std::vector<std::string> moreCommands;
+    std::vector<ScriptStep> steps;
     std::int32_t commandEveryMillis = 1500;
     std::optional<std::pair<std::array<std::int32_t, 3>, std::array<std::int32_t, 3>>> watchBox;
     std::int32_t leaveAfterMillis = 0;
@@ -91,6 +92,7 @@ struct Arguments {
     bool grounded = false;
     std::string commandsDump;
     bool ok = true;
+    bool helped = false;
 };
 
 /// The protocols a run is speaking, for the line it prints before it starts.
@@ -100,6 +102,55 @@ struct Arguments {
         text += (text.empty() ? "" : ", ") + std::to_string(protocol);
     }
     return text;
+}
+
+void printHelp() {
+    say("Usage: BasaltSwarm [options]");
+    say("  --ip host[:port]       target, default 127.0.0.1:25565 (19132 with --bedrock)");
+    say("  --count N, --delay MS  bots to start and the pause between them");
+    say("  --version V            protocol to speak, by name or number (e.g. 26.3, 777)");
+    say("  --physics, --floor Y   wander and fall; the height a bot stops falling at");
+    say("  --run CMD              type a command (no slash) once in the world; repeatable");
+    say("  --say TEXT             send a chat message; repeatable");
+    say("  --run-every MS         pause between --run/--say lines, default 1500 (first goes out at once)");
+    say("  --step MS:TEXT         one scripted line: wait MS after the previous line, then type TEXT");
+    say("                         (a leading slash makes it a command, anything else is chat); repeatable");
+    say("  --script FILE          scripted lines, one per line as '<ms> <text>' ('#' starts a comment)");
+    say("  Lines run in the order given on the command line; the first waits from the first position sync.");
+    say("  --leave-after MS       leave this long after the first position sync (0 stays)");
+    say("  --watch x,y,z[,x,y,z]  report the blocks in this box as the server shows them");
+    say("  --bedrock, --bedrock-protocol N[,N]   Bedrock edition and its protocols");
+    say("  Also: --place --place-count --place-face --interact --interact-count --interact-every --use");
+    say("        --use-every --dig --put --swap --stash --take --into --from --hotbar --sneak --grounded");
+    say("        --send ID:HEX --answer-dialog N --dump-commands FILE --spread N --stay MS");
+}
+
+[[nodiscard]] bool readScript(const std::string& path, std::vector<ScriptStep>& into) {
+    std::ifstream file{path};
+    if (!file) {
+        say("Cannot read the script: " + path);
+        return false;
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t start = line.find_first_not_of(" \t\r");
+        if (start == std::string::npos || line[start] == '#') {
+            continue;
+        }
+        const std::size_t space = line.find(' ', start);
+        const std::optional<std::int64_t> wait = numberOf<std::int64_t>(
+            std::string_view{line}.substr(start, space == std::string::npos ? space : space - start));
+        if (!wait.has_value() || space == std::string::npos) {
+            say("Bad script line (want '<ms> <text>'): " + line);
+            return false;
+        }
+        std::string text = line.substr(space + 1);
+        while (!text.empty() && (text.back() == '\r' || text.back() == ' ')) {
+            text.pop_back();
+        }
+        into.push_back({*wait, std::move(text)});
+    }
+    return true;
 }
 
 [[nodiscard]] Arguments parse(const std::vector<std::string_view>& args) {
@@ -179,6 +230,7 @@ struct Arguments {
             i++;
         } else if (flag == "--say") {
             parsed.chatLine = std::string{next};
+            parsed.steps.push_back({-1, std::string{next}});
             i += 2;
         } else if (flag == "--bedrock-protocol") {
             std::vector<std::int32_t> asked;
@@ -236,10 +288,31 @@ struct Arguments {
         } else if (flag == "--run") {
             if (parsed.commandLine.empty()) {
                 parsed.commandLine = std::string{next};
-            } else {
-                parsed.moreCommands.emplace_back(next);
+            }
+            parsed.steps.push_back({-1, "/" + std::string{next}});
+            i += 2;
+        } else if (flag == "--step") {
+            const std::size_t colon = next.find(':');
+            const std::optional<std::int64_t> wait =
+                colon == std::string_view::npos ? std::nullopt : numberOf<std::int64_t>(next.substr(0, colon));
+            if (!wait.has_value() || colon + 1 >= next.size()) {
+                say("--step wants <delay ms>:<text>, got: " + std::string{next});
+                parsed.ok = false;
+                return parsed;
+            }
+            parsed.steps.push_back({*wait, std::string{next.substr(colon + 1)}});
+            i += 2;
+        } else if (flag == "--script") {
+            if (!readScript(std::string{next}, parsed.steps)) {
+                parsed.ok = false;
+                return parsed;
             }
             i += 2;
+        } else if (flag == "--help" || flag == "-h") {
+            printHelp();
+            parsed.ok = false;
+            parsed.helped = true;
+            return parsed;
         } else if (flag == "--run-every") {
             parsed.commandEveryMillis = numberOf<std::int32_t>(next).value_or(parsed.commandEveryMillis);
             i += 2;
@@ -307,9 +380,9 @@ struct Arguments {
 int main(int argc, char** argv) {
     say("Basalt Swarm starting...");
     const std::vector<std::string_view> args{argv + 1, argv + argc};
-    const Arguments parsed = parse(args);
+    Arguments parsed = parse(args);
     if (!parsed.ok) {
-        return 2;
+        return parsed.helped ? 0 : 2;
     }
 
     const std::string layout = parsed.spread > 0.0
@@ -357,6 +430,11 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    for (std::size_t at = 0; at < parsed.steps.size(); ++at) {
+        if (parsed.steps[at].delayMillis < 0) {
+            parsed.steps[at].delayMillis = at == 0 ? 0 : parsed.commandEveryMillis;
+        }
+    }
     const std::vector<SpawnTarget> targets = spawnGrid(parsed.count, parsed.spread);
     std::vector<std::jthread> bots;
     bots.reserve(static_cast<std::size_t>(std::max(parsed.count, 0)));
@@ -371,9 +449,7 @@ int main(int argc, char** argv) {
         options.say = say;
         options.commandsDump = parsed.commandsDump;
         options.placeAt = parsed.placeAt;
-        options.commandLine = parsed.commandLine;
-        options.moreCommands = parsed.moreCommands;
-        options.commandEveryMillis = parsed.commandEveryMillis;
+        options.steps = parsed.steps;
         options.watchBox = parsed.watchBox;
         options.leaveAfterMillis = parsed.leaveAfterMillis;
         options.answerDialog = parsed.answerDialog;

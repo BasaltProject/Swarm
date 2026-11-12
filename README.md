@@ -83,7 +83,12 @@ You can run the generated native binary directly from your terminal. Swarm provi
 - `--use <n>` (default: `0`): A Bedrock bot uses what is in its hand on nothing that many times, the way a rod is cast and then reeled in. `--use-every <ms>` (default: `3000`) sets how long apart.
 - `--bedrock-protocol <number[,number...]>` (default: the one this build speaks): Which Bedrock protocol the bots claim; several are dealt out one per bot in turn. A server that turns them away for it is doing its job; one that turns away the very protocol it advertises in its own server list is not, and that is reported as a problem.
 - `--run <command>` (default: none): A command a bot runs without its slash: a Bedrock bot once it is in, a Java bot right after its first position sync. What the server answers arrives as chat, so `--run list` is a round trip through the server's own dispatcher. On Java, repeat the flag to type several in a row, `--run-every <ms>` (default: `1500`) apart. A Bedrock bot runs only the first command.
-- `--say <text>` (default: none): A Bedrock bot says this in chat once it is in.
+- `--say <text>` (default: none): The bot says this in chat once it is in. On Java it is one more line of the script, in the order given, `--run-every` after the last.
+- `--step <ms>:<text>` (default: none): One scripted line, repeatable: wait `<ms>` after the previous line (the first waits from the first position sync), then type `<text>`. A leading slash makes it a command, anything else is chat. Java only.
+- `--script <file>` (default: none): Scripted lines from a file, one per line as `<ms> <text>`, with `#` for comments. Mixes with `--run`, `--say` and `--step` in the order given. Java only.
+- `--help`: Prints the options.
+
+A Java bot answers keepalives, pings and chunk batches, sends its client ticks, and asks to respawn when it dies: a dead player stays unable to chat or run commands (a server answers `chat.disabled.options`) until it does.
 - `--leave-after <ms>` (default: stay until stopped): A Java bot leaves that long after its first position sync.
 - `--watch <x,y,z[,x,y,z]>` (default: none): A Java bot reports the state of one block, or of a box between two corners, as the server shows it.
 - `--place <x,y,z>` (default: none): A Java bot places what is in hand on the top face of that square. `--place-count <n>` (default: `1`) stacks that many blocks, and `--place-face <0-5>` (default: `1`, up) picks the face: 0 down, 1 up, 2 north, 3 south, 4 west, 5 east.
