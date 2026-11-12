@@ -51,6 +51,7 @@ struct Arguments {
     std::int32_t count = 1;
     std::int64_t delayMillis = 200;
     bool physicsEnabled = false;
+    double floorY = 63.0;
     double spread = 0.0;
     ProtocolProfile profile = protocols::newest();
     /// Which edition the swarm arrives on. Bedrock is another protocol on another
@@ -124,6 +125,9 @@ struct Arguments {
         } else if (flag == "--physics") {
             parsed.physicsEnabled = true;
             i++;
+        } else if (flag == "--floor") {
+            parsed.floorY = std::strtod(std::string{next}.c_str(), nullptr);
+            i += 2;
         } else if (flag == "--no-physics") {
             parsed.physicsEnabled = false;
             i++;
@@ -362,6 +366,7 @@ int main(int argc, char** argv) {
         options.host = parsed.host;
         options.port = parsed.port;
         options.physicsEnabled = parsed.physicsEnabled;
+        options.floorY = parsed.floorY;
         options.profile = parsed.profile;
         options.say = say;
         options.commandsDump = parsed.commandsDump;

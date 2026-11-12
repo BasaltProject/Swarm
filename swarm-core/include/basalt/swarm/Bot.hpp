@@ -32,6 +32,8 @@ public:
         std::string host = "127.0.0.1";
         std::uint16_t port = 25565;
         bool physicsEnabled = false;
+        /// The height a bot stops falling at, for a world whose floor is not at 63.
+        double floorY = 63.0;
         std::optional<SpawnTarget> target;
         ProtocolProfile profile = protocols::newest();
         /// Where a bot's own lines go. One place, so a swarm can be made quiet.

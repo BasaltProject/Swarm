@@ -34,10 +34,6 @@ constexpr double kAirSpeed = 0.02;
 /// is refused for.
 constexpr double kInteractReach = 3.0;
 
-/// The floor a bot bounces off when it has nothing else. Without it a bot that
-/// spawned over a hole falls out of the world for the rest of the run.
-constexpr double kFloor = 63.0;
-
 [[nodiscard]] std::vector<std::uint8_t> withVarInt(const std::int32_t value, const std::span<const std::uint8_t> body) {
     ByteWriter framed;
     framed.writeVarInt(value);
@@ -537,8 +533,8 @@ void Bot::tickPhysics() {
         z_ += std::cos(radians) * speed;
     }
     y_ += yVelocity_;
-    if (y_ <= kFloor) {
-        y_ = kFloor;
+    if (y_ <= options_.floorY) {
+        y_ = options_.floorY;
         yVelocity_ = 0.0;
         onGround_ = true;
     } else {

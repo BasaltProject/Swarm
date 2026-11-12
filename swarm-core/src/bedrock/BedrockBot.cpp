@@ -1791,7 +1791,7 @@ void BedrockBot::run() {
             hotbarSent_ = true;
             ByteWriter held;
             writeVarULong(held, runtimeEntityId_);
-            for (const std::uint8_t empty : {0, 0, 0, 0, 0, 0, 0, 0})
+            for (const std::uint8_t empty : std::array<std::uint8_t, 8>{})
                 held.writeByte(empty);
             held.writeByte(static_cast<std::uint8_t>(options_.hotbarSlot));
             held.writeByte(static_cast<std::uint8_t>(options_.hotbarSlot));
