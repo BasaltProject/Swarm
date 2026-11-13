@@ -2,6 +2,7 @@
 
 #include <basalt/swarm/Bytes.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -15,6 +16,9 @@ inline constexpr int kBedrockProtocol = 2225;
 
 /// The first protocol with the rewritten skin, player list and resource pack packets.
 inline constexpr int kNativeShapesProtocol = 2168;
+
+/// The first protocol with the editor migration byte, the block passenger flag and PlayFab ids in the player list.
+inline constexpr int kLayout2225Protocol = 2225;
 
 inline constexpr std::string_view kBedrockVersion = "1.26.60";
 
@@ -185,6 +189,77 @@ inline void skipTag(ByteReader& reader) {
     }
 }
 
+/// The payload of a network NBT tag of a given kind, got past whole, whatever is inside it.
+inline void skipNbtPayload(ByteReader& reader, const std::uint8_t kind, const int depth = 0) {
+    if (depth > 64 || reader.failed()) {
+        return;
+    }
+    switch (kind) {
+    case 1:
+        reader.skip(1);
+        return;
+    case 2:
+        reader.skip(2);
+        return;
+    case 3:
+        static_cast<void>(readVarInt(reader));
+        return;
+    case 4:
+        static_cast<void>(readVarLong(reader));
+        return;
+    case 5:
+        reader.skip(4);
+        return;
+    case 6:
+        reader.skip(8);
+        return;
+    case 7:
+        reader.skip(static_cast<std::size_t>(std::max(readVarInt(reader), 0)));
+        return;
+    case 8:
+        reader.skip(readVarUInt(reader));
+        return;
+    case 9: {
+        const std::uint8_t inner = reader.readByte();
+        const std::int32_t count = readVarInt(reader);
+        for (std::int32_t at = 0; at < count && !reader.failed(); ++at) {
+            skipNbtPayload(reader, inner, depth + 1);
+        }
+        return;
+    }
+    case 10:
+        for (std::uint8_t next = reader.readByte(); next != 0 && !reader.failed(); next = reader.readByte()) {
+            reader.skip(readVarUInt(reader));
+            skipNbtPayload(reader, next, depth + 1);
+        }
+        return;
+    case 11:
+    case 12: {
+        const std::int32_t count = readVarInt(reader);
+        for (std::int32_t at = 0; at < count && !reader.failed(); ++at) {
+            if (kind == 11) {
+                static_cast<void>(readVarInt(reader));
+            } else {
+                static_cast<void>(readVarLong(reader));
+            }
+        }
+        return;
+    }
+    default:
+        return;
+    }
+}
+
+/// A whole named network NBT tag, as a block definition carries.
+inline void skipNamedTag(ByteReader& reader) {
+    const std::uint8_t kind = reader.readByte();
+    if (kind == 0) {
+        return;
+    }
+    reader.skip(readVarUInt(reader));
+    skipNbtPayload(reader, kind);
+}
+
 /// An image inside a skin: its size, then the pixels, with no header at all.
 inline void skipImage(ByteReader& reader) {
     static_cast<void>(readIntLE(reader));
@@ -238,7 +313,9 @@ inline void skipSkin(ByteReader& reader, const int protocol) {
     }
 
     static_cast<void>(readString(reader)); // Skin id,
-    static_cast<void>(readString(reader)); // the PlayFab account behind it,
+    if (protocol < kLayout2225Protocol) {
+        static_cast<void>(readString(reader)); // The PlayFab account, which 2225 moved to the list entry.
+    }
     static_cast<void>(readString(reader)); // and the json naming its geometry.
     skipImage(reader);
     const std::uint32_t animations = readVarUInt(reader);

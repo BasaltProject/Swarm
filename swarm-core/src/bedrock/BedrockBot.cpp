@@ -105,8 +105,8 @@ void writeStackSlot(ByteWriter& writer, const std::int32_t container, const std:
 
 /// One stack where it is named rather than moved: the creative menu and an
 /// entity's hand.
-void readItemInstance(ByteReader& reader) {
-    if (readVarInt(reader) == 0) {
+void readItemInstance(ByteReader& reader, const int protocol) {
+    if (readVarInt(reader) == 0 && !nativeShapes(protocol)) {
         return;
     }
     static_cast<void>(readShortLE(reader)); // How many,
@@ -115,6 +115,20 @@ void readItemInstance(ByteReader& reader) {
     const std::uint32_t extra = readVarUInt(reader);
     for (std::uint32_t at = 0; at < extra && !reader.failed(); ++at) {
         static_cast<void>(reader.readByte());
+    }
+}
+
+/// The two lists of synced entity properties, ints and then floats, each entry an index and a value.
+void skipEntityProperties(ByteReader& reader) {
+    const std::uint32_t ints = readVarUInt(reader);
+    for (std::uint32_t at = 0; at < ints && !reader.failed(); ++at) {
+        static_cast<void>(readVarUInt(reader));
+        static_cast<void>(readVarInt(reader));
+    }
+    const std::uint32_t floats = readVarUInt(reader);
+    for (std::uint32_t at = 0; at < floats && !reader.failed(); ++at) {
+        static_cast<void>(readVarUInt(reader));
+        static_cast<void>(readFloatLE(reader));
     }
 }
 
@@ -386,6 +400,9 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         static_cast<void>(readVarInt(reader));  // what kind of editor world it is,
         static_cast<void>(reader.readByte());   // whether it was made in one,
         static_cast<void>(reader.readByte());   // whether it was exported from one,
+        if (options_.protocol >= kLayout2225Protocol) {
+            static_cast<void>(reader.readByte()); // which migration the editor level is at.
+        }
         static_cast<void>(readVarInt(reader));  // where the day stops,
         static_cast<void>(readVarUInt(reader)); // what education offers,
         static_cast<void>(reader.readByte());   // whether they are on,
@@ -448,20 +465,26 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         // them naming the mode and 818 took it away: reading it anyway is how this
         // bot agreed with a server that wrote one varint too many, and neither of
         // them noticed.
-        static_cast<void>(readVarInt(reader));  // how much of it it rewinds,
-        static_cast<void>(reader.readByte());   // who breaks blocks,
-        static_cast<void>(readLongLE(reader));  // what tick it is,
-        static_cast<void>(readVarInt(reader));  // the enchantment seed,
-        static_cast<void>(readVarUInt(reader)); // and no blocks of its own.
-        static_cast<void>(readString(reader));  // What correlates this session,
-        static_cast<void>(reader.readByte());   // who owns the inventories,
-        static_cast<void>(readString(reader));  // what engine is running,
-        skipTag(reader);                        // what properties a player has,
-        static_cast<void>(readLongLE(reader));  // the checksum of the block registry,
-        static_cast<void>(readUuid(reader));    // and the template's id.
-        static_cast<void>(reader.readByte());   // Who generates chunks,
-        static_cast<void>(reader.readByte());   // how block ids are numbered,
-        static_cast<void>(reader.readByte());   // and who plays the sounds.
+        // Skipped: rewind depth, block breaking, tick, enchantment seed, custom block count.
+        static_cast<void>(readVarInt(reader));
+        static_cast<void>(reader.readByte());
+        static_cast<void>(readLongLE(reader));
+        static_cast<void>(readVarInt(reader));
+        const std::uint32_t customBlocks = readVarUInt(reader);
+        for (std::uint32_t at = 0; at < customBlocks && !reader.failed(); ++at) {
+            static_cast<void>(readString(reader));
+            skipNamedTag(reader);
+        }
+        // Skipped: session id, inventory owner, engine, player properties, registry checksum, template id, three flags.
+        static_cast<void>(readString(reader));
+        static_cast<void>(reader.readByte());
+        static_cast<void>(readString(reader));
+        skipTag(reader);
+        static_cast<void>(readLongLE(reader));
+        static_cast<void>(readUuid(reader));
+        static_cast<void>(reader.readByte());
+        static_cast<void>(reader.readByte());
+        static_cast<void>(reader.readByte());
         if (options_.protocol >= 1001 && !nativeShapes(options_.protocol)) {
             static_cast<void>(reader.readByte()); // Whether chat is logged, which only 1001 asks.
         }
@@ -555,6 +578,9 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             static_cast<void>(readVarLong(reader)); // Their entity id,
             const std::string name = readString(reader);
             static_cast<void>(readString(reader)); // their xuid,
+            if (options_.protocol >= kLayout2225Protocol) {
+                static_cast<void>(readString(reader)); // The PlayFab account.
+            }
             static_cast<void>(readString(reader)); // and what console they chat from.
             static_cast<void>(readIntLE(reader));
             skipSkin(reader, options_.protocol);
@@ -659,8 +685,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         static_cast<void>(readItem(reader, options_.protocol));
         static_cast<void>(readVarInt(reader)); // Which game type they are on.
         static_cast<void>(readMetadata(reader, options_.protocol));
-        static_cast<void>(readVarUInt(reader)); // Entity properties, of which a player has none.
-        static_cast<void>(readVarUInt(reader));
+        skipEntityProperties(reader);
         static_cast<void>(readLongLE(reader)); // The abilities: whose they are,
         static_cast<void>(reader.readByte());  // what they may do here,
         static_cast<void>(reader.readByte());  // what commands they may run,
@@ -673,8 +698,12 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             static_cast<void>(readFloatLE(reader));
         }
         static_cast<void>(readVarUInt(reader)); // What they are riding or ridden by.
-        static_cast<void>(readString(reader));  // Which device,
-        static_cast<void>(readIntLE(reader));   // of which platform.
+        if (options_.protocol >= kLayout2225Protocol) {
+            static_cast<void>(reader.readByte()); // Whether a block carries them, which nobody does here.
+        }
+        // The device name and its platform.
+        static_cast<void>(readString(reader));
+        static_cast<void>(readIntLE(reader));
         if (reader.failed()) {
             problem("a player was added with a body that ran out");
             return;
@@ -816,15 +845,17 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         // line after it misread.
         const std::uint32_t groups = readVarUInt(reader);
         for (std::uint32_t at = 0; at < groups && !reader.failed(); ++at) {
-            static_cast<void>(reader.readByte());  // Which tab it sits under,
-            static_cast<void>(readString(reader)); // what it is called,
-            readItemInstance(reader);              // and what is drawn on it.
+            // A tab, its name and the item drawn on it.
+            static_cast<void>(reader.readByte());
+            static_cast<void>(readString(reader));
+            readItemInstance(reader, options_.protocol);
         }
         const std::uint32_t offered = readVarUInt(reader);
         for (std::uint32_t at = 0; at < offered && !reader.failed(); ++at) {
-            static_cast<void>(readVarUInt(reader)); // Which stack this is,
-            readItemInstance(reader);               // what it is,
-            static_cast<void>(readVarUInt(reader)); // and which group it is in.
+            // The offered stack id, the item it is, and its group.
+            static_cast<void>(readVarUInt(reader));
+            readItemInstance(reader, options_.protocol);
+            static_cast<void>(readVarUInt(reader));
         }
         if (reader.failed()) {
             problem("the creative menu ran off the end of the packet");
@@ -1016,8 +1047,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             problem("a metadata field arrived in a format this bot cannot read");
             return;
         }
-        static_cast<void>(readVarUInt(reader)); // Entity properties, of which this server sends none.
-        static_cast<void>(readVarUInt(reader));
+        skipEntityProperties(reader);
         static_cast<void>(readVarULong(reader)); // Which tick it belongs to.
         if (reader.failed()) {
             problem("metadata arrived with a body that ran out");
