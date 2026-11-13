@@ -11,9 +11,12 @@ namespace basalt::swarm::bedrock {
 /// The Bedrock protocol this bot claims by default. A server that speaks
 /// another answers with the number it wants instead of letting the bot in, and
 /// that is a thing worth testing too.
-inline constexpr int kBedrockProtocol = 2168;
+inline constexpr int kBedrockProtocol = 2225;
 
-inline constexpr std::string_view kBedrockVersion = "1.26.40";
+/// The first protocol with the rewritten skin, player list and resource pack packets.
+inline constexpr int kNativeShapesProtocol = 2168;
+
+inline constexpr std::string_view kBedrockVersion = "1.26.60";
 
 /// Bedrock writes its fixed-width numbers little endian and its variable ones
 /// LEB128, which is the opposite of Java Edition on both counts. None of the
@@ -163,7 +166,7 @@ inline void writeString(ByteWriter& writer, std::string_view value) {
 /// Protocol 2168 rewrote the skin, the player list and the two resource pack
 /// packets. A bot that claims anything older in the window reads and writes the
 /// shape underneath.
-[[nodiscard]] inline bool nativeShapes(const int protocol) { return protocol >= kBedrockProtocol; }
+[[nodiscard]] inline bool nativeShapes(const int protocol) { return protocol >= kNativeShapesProtocol; }
 
 /// A network NBT tag, skipped rather than read: a bot only needs to get past
 /// it. Bedrock writes its NBT little endian with varint lengths, and the only
