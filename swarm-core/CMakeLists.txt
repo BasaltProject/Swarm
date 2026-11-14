@@ -13,6 +13,7 @@ add_library(swarm-core STATIC
     src/Socket.cpp
     src/UdpSocket.cpp
     src/bedrock/BedrockBot.cpp
+    src/bedrock/BedrockTransfer.cpp
     src/bedrock/BedrockCrypto.cpp
     src/bedrock/RakClient.cpp
     src/Spread.cpp

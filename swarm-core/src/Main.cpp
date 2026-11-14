@@ -395,6 +395,11 @@ int main(int argc, char** argv) {
              ? "Bedrock " + std::string{bedrock::kBedrockVersion} + " (" + protocolList(parsed.bedrockProtocols) + ")"
              : std::string{parsed.profile.label} + " (" + std::to_string(parsed.profile.protocol) + ")"));
 
+    for (std::size_t at = 0; at < parsed.steps.size(); ++at) {
+        if (parsed.steps[at].delayMillis < 0) {
+            parsed.steps[at].delayMillis = at == 0 ? 0 : parsed.commandEveryMillis;
+        }
+    }
     if (parsed.bedrock) {
         std::vector<std::jthread> bedrockBots;
         bedrockBots.reserve(static_cast<std::size_t>(std::max(parsed.count, 0)));
@@ -406,8 +411,13 @@ int main(int argc, char** argv) {
             options.stayMillis = parsed.stayMillis;
             options.protocol =
                 parsed.bedrockProtocols[static_cast<std::size_t>(id - 1) % parsed.bedrockProtocols.size()];
-            options.chatLine = parsed.chatLine;
-            options.commandLine = parsed.commandLine;
+            if (parsed.steps.empty()) {
+                options.chatLine = parsed.chatLine;
+                options.commandLine = parsed.commandLine;
+            }
+            for (const ScriptStep& step : parsed.steps) {
+                options.steps.emplace_back(step.delayMillis, step.text);
+            }
             options.useCount = parsed.useCount;
             options.useEveryMillis = parsed.useEveryMillis;
             options.digAt = parsed.digAt;
@@ -430,11 +440,6 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    for (std::size_t at = 0; at < parsed.steps.size(); ++at) {
-        if (parsed.steps[at].delayMillis < 0) {
-            parsed.steps[at].delayMillis = at == 0 ? 0 : parsed.commandEveryMillis;
-        }
-    }
     const std::vector<SpawnTarget> targets = spawnGrid(parsed.count, parsed.spread);
     std::vector<std::jthread> bots;
     bots.reserve(static_cast<std::size_t>(std::max(parsed.count, 0)));

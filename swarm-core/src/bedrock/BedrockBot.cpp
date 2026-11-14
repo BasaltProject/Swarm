@@ -177,7 +177,10 @@ void skipEntityProperties(ByteReader& reader) {
 
 } // namespace
 
-BedrockBot::BedrockBot(Options options) : options_(std::move(options)), rak_(options_.host, options_.port) {}
+BedrockBot::BedrockBot(Options options)
+    : options_(std::move(options)), rak_(options_.host, options_.port),
+      transfer_([this](Packet packet, std::span<const std::uint8_t> body) { send(packet, body); },
+                [this](const std::string& line) { say(line); }, [this](const std::string& line) { problem(line); }) {}
 
 BedrockBot::~BedrockBot() = default;
 
@@ -572,6 +575,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             const std::string uuid = readUuid(reader);
             if (!arriving) {
                 listed_.erase(uuid);
+                transfer_.listed(uuid, false, nowMillis());
                 say("told that " + uuid + " is gone");
                 continue;
             }
@@ -594,6 +598,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             }
             ++added;
             listed_[uuid] = name;
+            transfer_.listed(uuid, true, nowMillis());
             say("told about " + name + " in the player list");
         }
         // Below 2168 whether a skin is to be trusted is not part of the line: it is
@@ -613,6 +618,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         const std::string objective = readString(reader);
         const std::string title = readString(reader);
         if (!reader.failed()) {
+            transfer_.objective(objective, true, nowMillis());
             say("scoreboard " + slot + " shows " + objective + " titled " + title);
         }
         return;
@@ -624,17 +630,24 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
     case Packet::RemoveObjective: {
         const std::string objective = readString(reader);
         if (!reader.failed()) {
+            transfer_.objective(objective, false, nowMillis());
             say("scoreboard " + objective + " is gone");
         }
         return;
     }
     case Packet::BossEvent: {
-        static_cast<void>(readVarLong(reader));
-        const std::uint8_t action = reader.readByte();
-        const std::string title = readString(reader);
-        if (!reader.failed()) {
-            say("boss bar action " + std::to_string(action) + " titled " + title);
+        constexpr std::uint32_t kShow = 0;
+        constexpr std::uint32_t kHide = 2;
+        const std::int64_t bar = readVarLong(reader);
+        const std::uint32_t action = readVarUInt(reader);
+        if (reader.failed()) {
+            problem("a boss bar arrived with a body that ran out");
+            return;
         }
+        if (action == kShow || action == kHide) {
+            transfer_.bossBar(bar, action == kShow, nowMillis());
+        }
+        say("boss bar " + std::to_string(bar) + " action " + std::to_string(action));
         return;
     }
     case Packet::AddEntity: {
@@ -649,6 +662,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             return;
         }
         seen_[runtime] = identifier;
+        transfer_.entity(runtime, true, nowMillis());
         say("can see " + identifier + " at " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
         return;
     }
@@ -664,6 +678,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             return;
         }
         seen_[runtime] = "an item";
+        transfer_.entity(runtime, true, nowMillis());
         say("can see a dropped item (" + std::to_string(item.count) + " of " + std::to_string(item.id) + ") at " +
             std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
         return;
@@ -719,6 +734,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             problem("the server drew " + name + " without listing them first");
         }
         seen_[runtime] = name;
+        transfer_.entity(runtime, true, nowMillis());
         say("can see " + name + " at " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
         return;
     }
@@ -746,6 +762,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         const std::int64_t entityId = readVarLong(reader);
         if (!reader.failed()) {
             seen_.erase(static_cast<std::uint64_t>(entityId));
+            transfer_.entity(static_cast<std::uint64_t>(entityId), false, nowMillis());
             say("entity " + std::to_string(entityId) + " is gone");
         }
         return;
@@ -789,7 +806,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         // An effect starting, changing or ending. Read to the last byte: this
         // packet grew twice in the window this bot speaks and both times at the
         // end.
-        static_cast<void>(readVarULong(reader)); // Whose it is.
+        const std::uint64_t whose = readVarULong(reader);
         const std::uint8_t event = reader.readByte();
         const std::int32_t id = readVarInt(reader);
         const std::int32_t amplifier = readVarInt(reader);
@@ -806,6 +823,10 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             return;
         }
         ++effects_;
+        if (whose == runtimeEntityId_) {
+            constexpr std::uint8_t kRemoved = 3;
+            transfer_.effect(id, event != kRemoved, nowMillis());
+        }
         say("effect " + std::to_string(id) + " level " + std::to_string(amplifier + 1) + " for " +
             std::to_string(ticks) + " tick(s), event " + std::to_string(static_cast<std::int32_t>(event)));
         return;
@@ -923,6 +944,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         say("window " + std::to_string(containerId) + " of kind " + std::to_string(type) + " opened at " +
             std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
         openContainer_ = containerId;
+        transfer_.window(containerId, nowMillis());
         return;
     }
     case Packet::ContainerClose: {
@@ -939,6 +961,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         }
         say("window " + std::to_string(containerId) + " closed" + (byServer ? " by the server" : ""));
         openContainer_ = -1;
+        transfer_.window(-1, nowMillis());
         return;
     }
     case Packet::ItemStackResponse: {
@@ -1029,6 +1052,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
             return;
         }
         carried_ += filled;
+        transfer_.inventory(containerId, filled, nowMillis());
         say("window " + std::to_string(containerId) + " has " + std::to_string(slots) + " slot(s)" +
             (held.empty() ? "" : ": " + held));
         return;
@@ -1151,13 +1175,14 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         // How much world arrived. A column with no subchunks is a hole the client
         // draws as nothing, which is what this server sent before it knew the block
         // palette.
-        static_cast<void>(readVarInt(reader)); // Which column,
-        static_cast<void>(readVarInt(reader));
-        static_cast<void>(readVarInt(reader)); // in which dimension,
+        const std::int32_t columnX = readVarInt(reader);
+        const std::int32_t columnZ = readVarInt(reader);
+        const std::int32_t dimension = readVarInt(reader);
         const std::uint32_t subChunks = readVarUInt(reader);
         if (reader.failed()) {
             return;
         }
+        transfer_.column(columnX, columnZ, dimension, subChunks);
         if (subChunks > 0) {
             ++columnsWithBlocks_;
             if (columnsWithBlocks_ == 1) {
@@ -1187,6 +1212,7 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         x_ = x;
         y_ = y;
         z_ = z;
+        transfer_.changed(dimension, x, z, runtimeEntityId_, nowMillis());
         say("moved to dimension " + std::to_string(dimension) + " at " + std::to_string(x) + ", " + std::to_string(y) +
             ", " + std::to_string(z));
         return;
@@ -1302,15 +1328,19 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         }
         switch (type) {
         case 3001:
+            transfer_.weather(false, true, nowMillis());
             say("it is raining, at " + std::to_string(data));
             break;
         case 3002:
+            transfer_.weather(true, true, nowMillis());
             say("it is thundering, at " + std::to_string(data));
             break;
         case 3003:
+            transfer_.weather(false, false, nowMillis());
             say("it stopped raining");
             break;
         case 3004:
+            transfer_.weather(true, false, nowMillis());
             say("it stopped thundering");
             break;
         default:
@@ -1375,6 +1405,38 @@ void BedrockBot::handle(const Packet packet, ByteReader& reader) {
         if (!reader.failed()) {
             say("the world says the time is " + std::to_string(time));
         }
+        return;
+    }
+    case Packet::PlayerAction: {
+        constexpr std::int32_t kDimensionChangeAck = 14;
+        static_cast<void>(readVarULong(reader));
+        const std::int32_t action = readVarInt(reader);
+        for (int position = 0; position < 2; ++position) {
+            static_cast<void>(readVarInt(reader));
+            static_cast<void>(readVarUInt(reader));
+            static_cast<void>(readVarInt(reader));
+        }
+        static_cast<void>(readVarInt(reader));
+        if (reader.failed() || reader.remaining() != 0) {
+            problem("a player action from the server was not the size it should be");
+            return;
+        }
+        if (action == kDimensionChangeAck) {
+            transfer_.acknowledged(nowMillis());
+        } else {
+            say("player action " + std::to_string(action) + " from the server");
+        }
+        return;
+    }
+    case Packet::StopSound: {
+        const std::string name = readString(reader);
+        const bool all = reader.readByte() != 0;
+        static_cast<void>(reader.readByte());
+        if (reader.failed() || reader.remaining() != 0) {
+            problem("a stop sound was not the size it should be");
+            return;
+        }
+        say(all ? std::string{"every sound stopped"} : "the sound " + name + " stopped");
         return;
     }
     case Packet::Disconnect:
@@ -1846,9 +1908,24 @@ void BedrockBot::run() {
         const std::int64_t closeAt = leaveAt - (options_.stayMillis / 3);
         std::int64_t nextStep = nowMillis();
         bool closeSent = false;
-        while (running_ && nowMillis() < leaveAt) {
+        std::size_t stepAt = 0;
+        std::int64_t nextLineAt = options_.steps.empty() ? 0 : nowMillis() + options_.steps.front().first;
+        while (running_ && (nowMillis() < leaveAt || (transfer_.settling() && nowMillis() < leaveAt + 15000))) {
             if (!pump(100)) {
                 break;
+            }
+            transfer_.tick(nowMillis());
+            if (stepAt < options_.steps.size() && nowMillis() >= nextLineAt) {
+                const std::string& line = options_.steps[stepAt].second;
+                if (line.starts_with('/')) {
+                    sendCommand(line.substr(1));
+                } else {
+                    sendChat(line);
+                }
+                ++stepAt;
+                if (stepAt < options_.steps.size()) {
+                    nextLineAt = nowMillis() + options_.steps[stepAt].first;
+                }
             }
             if (!closeSent && openContainer_ >= 0 && nowMillis() >= closeAt) {
                 ByteWriter close;
@@ -1866,6 +1943,7 @@ void BedrockBot::run() {
                 nextStep = nowMillis() + 100;
             }
         }
+        say("walked through " + std::to_string(transfer_.completed()) + " dimension change(s)");
         say("left with " + std::to_string(columnsWithBlocks_) + " column(s) of the world drawn, of " +
             std::to_string(counts_[static_cast<std::uint16_t>(Packet::LevelChunk)]) + " sent");
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <basalt/swarm/bedrock/BedrockCrypto.hpp>
+#include <basalt/swarm/bedrock/BedrockTransfer.hpp>
 #include <basalt/swarm/bedrock/BedrockTypes.hpp>
 #include <basalt/swarm/bedrock/RakClient.hpp>
 
@@ -63,6 +64,8 @@ public:
         /// `stepOn` waits for.
         bool grounded = false;
         std::function<void(const std::string&)> say;
+        /// Lines to type once in, each after its own pause in milliseconds; a leading slash makes it a command.
+        std::vector<std::pair<std::int64_t, std::string>> steps;
     };
 
     explicit BedrockBot(Options options);
@@ -127,6 +130,9 @@ public:
     /// The last value of every attribute the server sent for this bot itself.
     [[nodiscard]] const std::map<std::string, float>& attributes() const noexcept { return attributes_; }
 
+    /// How many dimension changes this bot walked through to the end.
+    [[nodiscard]] std::int32_t transfers() const noexcept { return transfer_.completed(); }
+
 private:
     void say(const std::string& line) const;
     void problem(const std::string& line);
@@ -189,6 +195,7 @@ private:
     std::set<std::int32_t> unread_;
     std::int32_t itemNames_ = 0;
     std::int32_t carried_ = 0;
+    TransferWatch transfer_;
 };
 
 } // namespace basalt::swarm::bedrock

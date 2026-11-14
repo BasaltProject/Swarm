@@ -415,6 +415,9 @@ enum class Packet : std::uint16_t {
     NetworkSettings = 143,
     PlayerAuthInput = 144,
     RequestNetworkSettings = 193,
+    PlayerAction = 36,
+    StopSound = 87,
+    ServerboundLoadingScreen = 312,
 };
 
 } // namespace basalt::swarm::bedrock
