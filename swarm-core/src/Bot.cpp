@@ -818,6 +818,8 @@ void Bot::run() {
             tickClientTickEnd();
             if (options_.physicsEnabled) {
                 tickPhysics();
+            } else if (options_.grounded && positionReceived_) {
+                static_cast<void>(sendPositionLook());
             }
             tickInteract();
             tickPlace();
