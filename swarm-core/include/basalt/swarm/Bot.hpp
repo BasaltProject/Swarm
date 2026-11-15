@@ -76,6 +76,7 @@ public:
         /// it has set anything up.
         std::int32_t interactEveryMillis = 1000;
         bool interactAttack = false;
+        bool grounded = false;
     };
 
     explicit Bot(Options options);

@@ -183,7 +183,7 @@ bool Bot::sendPositionLook() {
     body.writeDouble(z_);
     body.writeFloat(yaw_);
     body.writeFloat(pitch_);
-    body.writeByte(onGround_ ? 1 : 0);
+    body.writeByte(onGround_ || options_.grounded ? 1 : 0);
     return sendPacket(options_.profile.play.serverboundMovePosRot, body);
 }
 

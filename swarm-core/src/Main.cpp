@@ -470,6 +470,7 @@ int main(int argc, char** argv) {
         options.interactCount = parsed.interactCount;
         options.interactEveryMillis = parsed.interactEveryMillis;
         options.interactAttack = parsed.interactAttack;
+        options.grounded = parsed.grounded;
         if (static_cast<std::size_t>(id - 1) < targets.size()) {
             options.target = targets[static_cast<std::size_t>(id - 1)];
         }
