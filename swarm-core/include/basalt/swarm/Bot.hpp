@@ -75,6 +75,7 @@ public:
         /// clicks on its first tick in the world clicks before whoever is driving
         /// it has set anything up.
         std::int32_t interactEveryMillis = 1000;
+        bool interactAttack = false;
     };
 
     explicit Bot(Options options);

@@ -33,6 +33,7 @@ constexpr double kAirSpeed = 0.02;
 /// How far a server lets a player reach an entity, which is what a click beyond
 /// is refused for.
 constexpr double kInteractReach = 3.0;
+constexpr std::int32_t kServerboundAttack = 0x01;
 
 constexpr float kChunksPerTick = 20.0F;
 
@@ -696,6 +697,18 @@ void Bot::tickInteract() {
         }
     }
     if (nearest < 0) {
+        return;
+    }
+    if (options_.interactAttack) {
+        ByteWriter attack;
+        attack.writeVarInt(nearest);
+        if (!sendPacket(kServerboundAttack, attack)) {
+            return;
+        }
+        interactsSent_++;
+        nextInteractAt_ = now + options_.interactEveryMillis;
+        say("Bot " + std::to_string(options_.id) + " attacked entity " + std::to_string(nearest) + ", " +
+            std::to_string(interactsSent_) + " of " + std::to_string(options_.interactCount) + ".");
         return;
     }
     ByteWriter body;

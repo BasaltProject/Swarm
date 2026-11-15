@@ -79,6 +79,7 @@ struct Arguments {
     std::optional<std::int32_t> interactType;
     std::int32_t interactCount = 1;
     std::int32_t interactEveryMillis = 1000;
+    bool interactAttack = false;
     std::int32_t useEveryMillis = 3000;
     std::string digAt;
     std::string putAt;
@@ -120,7 +121,7 @@ void printHelp() {
     say("  --leave-after MS       leave this long after the first position sync (0 stays)");
     say("  --watch x,y,z[,x,y,z]  report the blocks in this box as the server shows them");
     say("  --bedrock, --bedrock-protocol N[,N]   Bedrock edition and its protocols");
-    say("  Also: --place --place-count --place-face --interact --interact-count --interact-every --use");
+    say("  Also: --place --place-count --place-face --interact --attack --interact-count --interact-every --use");
     say("        --use-every --dig --put --swap --stash --take --into --from --hotbar --sneak --grounded");
     say("        --send ID:HEX --answer-dialog N --dump-commands FILE --spread N --stay MS");
 }
@@ -263,6 +264,10 @@ void printHelp() {
             i += 2;
         } else if (flag == "--interact") {
             parsed.interactType = numberOf<std::int32_t>(next);
+            i += 2;
+        } else if (flag == "--attack") {
+            parsed.interactType = numberOf<std::int32_t>(next);
+            parsed.interactAttack = true;
             i += 2;
         } else if (flag == "--interact-count") {
             parsed.interactCount = numberOf<std::int32_t>(next).value_or(parsed.interactCount);
@@ -464,6 +469,7 @@ int main(int argc, char** argv) {
         options.interactType = parsed.interactType;
         options.interactCount = parsed.interactCount;
         options.interactEveryMillis = parsed.interactEveryMillis;
+        options.interactAttack = parsed.interactAttack;
         if (static_cast<std::size_t>(id - 1) < targets.size()) {
             options.target = targets[static_cast<std::size_t>(id - 1)];
         }
