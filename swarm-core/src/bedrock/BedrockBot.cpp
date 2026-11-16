@@ -1650,7 +1650,7 @@ void BedrockBot::sendAuthInput() {
             writeVarUInt(body, 0);
         }
         writeVarInt(body, at[0]);
-        writeVarUInt(body, static_cast<std::uint32_t>(at[1]));
+        writeVarInt(body, at[1]); // Signed since protocol 944, so a block below zero reads right.
         writeVarInt(body, at[2]);
         if (native) {
             body.writeByte(1); // On its top,
